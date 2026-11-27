@@ -1373,7 +1373,7 @@ async function fetchWeatherAndUpdateUI(options) {
     : { lat: lat, lng: lng, placeId: placeId, refreshModal: false, isolate: false };
 
   try {
-    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
+    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&current=temperature_2m,relative_humidity_2m,pressure_msl,weather_code,wind_speed_10m,wind_direction_10m,precipitation&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,precipitation_probability,relative_humidity_2m,wind_speed_10m,wind_direction_10m,pressure_msl,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunshine_duration,wind_speed_10m_max,sunrise,sunset&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
     
     let today = new Date();
     let formatYMD = (d) => d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');

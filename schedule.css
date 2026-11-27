@@ -4052,3 +4052,239 @@ select.snr-input {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   text-align: center;
 }
+
+@media screen and (max-width: 640px) {
+  .mobile-bottom-bar {
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-bottom-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-bottom-bar button {
+    flex: 0 0 auto;
+    min-width: 60px;
+    padding: 8px 4px;
+  }
+}
+
+/* ==========================================
+   🛻 軽トラ翌日利用予約 & 配車 UI
+   ========================================== */
+.sched-veh-banner {
+  background: #FFF8E1;
+  border: 1.5px solid #FFB74D;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+
+.sched-veh-banner-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sched-veh-banner-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #E65100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sched-veh-banner-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.sched-veh-range-btn {
+  border: 1px solid #FFCC80;
+  background: #fff;
+  color: #E65100;
+  border-radius: 14px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.sched-veh-range-btn.is-active {
+  background: #FF9800;
+  border-color: #F57C00;
+  color: #fff;
+}
+
+.sched-veh-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sched-veh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #FFCC80;
+  font-size: 12px;
+  color: #4E342E;
+  line-height: 1.35;
+}
+
+.sched-veh-chip.is-conflict {
+  background: #FFEBEE;
+  border-color: #EF5350;
+  color: #B71C1C;
+}
+
+.sched-veh-del-btn {
+  border: none;
+  background: rgba(0, 0, 0, 0.08);
+  color: #C62828;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.sched-veh-notice {
+  background: #FFF3E0;
+  border: 1px solid #FFB74D;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-top: 10px;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  color: #5D4037;
+  line-height: 1.45;
+}
+
+.sched-veh-picker {
+  margin-top: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: #E0F2F1;
+  border: 1px solid #80CBC4;
+  border-radius: 8px;
+}
+
+.sched-veh-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.sched-veh-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 14px;
+  border: 1px solid #B2DFDB;
+  background: #fff;
+  color: #004D40;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sched-veh-opt.is-selected {
+  background: #B2DFDB;
+  border-color: #00897B;
+  font-weight: bold;
+}
+
+.sched-veh-opt.has-warn {
+  border-color: #FB8C00;
+}
+
+.sched-veh-warn-box {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #FFEBEE;
+  border: 1px solid #EF9A9A;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #C62828;
+  line-height: 1.4;
+}
+
+.sched-veh-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.sched-veh-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #E0F2F1;
+  border: 1px solid #80CBC4;
+  color: #00695C;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.sched-veh-badge.is-conflict {
+  background: #FFEBEE;
+  border-color: #EF5350;
+  color: #C62828;
+}
+
+.sched-veh-btn {
+  background: #E0F2F1;
+  color: #00695C;
+  border: 1px solid #80CBC4;
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.gantt-veh-badge {
+  display: inline-block;
+  margin-left: 3px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #FFF3E0;
+  border: 1px solid #FFB74D;
+  color: #E65100;
+  font-size: 10px;
+  font-weight: bold;
+  vertical-align: middle;
+}
+
+.gantt-veh-sub {
+  font-size: 10px;
+  font-weight: bold;
+  color: #00695C;
+  margin-top: 2px;
+}

@@ -201,6 +201,7 @@
     var sched = state.schedByRecord[r.id] || {};
     if (!pred || pred.error || r.data.status !== 'active') return null;
     var limit = u.addDays(u.todayYmd(), lookaheadDays());
+    var areaA = CS().fieldAreaA(r.data.fieldId);
     var pending = pred.instances.filter(function (i) { return i.status === 'pending' && i.start; });
     var sel = pending.filter(function (i) { return i.start <= limit || (sched[i.key] && sched[i.key].active); });
     if (!sel.length && pending.length) sel = [pending[0]];
@@ -214,6 +215,9 @@
           dueDate: i.end,
           basis: i.basis,
           match: i.match,
+          fertilizers: i.fertilizers || [],
+          pesticides: i.pesticides || [],
+          materialsText: CS().buildMaterialsText(i.fertilizers, i.pesticides, areaA),
           windowStart: i.windowStart,
           windowEnd: i.windowEnd || '',
           reopen: !!(sched[i.key] && sched[i.key].completed && !sched[i.key].active)
@@ -572,6 +576,23 @@
     return h;
   }
 
+  function instanceMatsChipsHtml(it, areaA) {
+    var cs = CS();
+    var ferts = (it && it.fertilizers) || [];
+    var pests = (it && it.pesticides) || [];
+    if (!ferts.length && !pests.length) return '';
+    var chips = [];
+    ferts.forEach(function (f) {
+      var l = cs.formatFertilizerLine(f, areaA);
+      if (l) chips.push('<span class="cult-mat-chip cult-mat-chip--fert">🧪 ' + esc(l) + '</span>');
+    });
+    pests.forEach(function (p) {
+      var l = cs.formatPesticideLine(p, areaA);
+      if (l) chips.push('<span class="cult-mat-chip cult-mat-chip--pest">🧴 ' + esc(l) + '</span>');
+    });
+    return chips.length ? '<div class="cult-mat-chips">' + chips.join('') + '</div>' : '';
+  }
+
   function renderRecordCard(r) {
     var u = U();
     var cs = CS();
@@ -580,6 +601,7 @@
     var sched = state.schedByRecord[r.id] || {};
     var activeCount = Object.keys(sched).filter(function (k) { return sched[k].active; }).length;
     var saved = !!cs.getSavedSetting(d.cropName);
+    var areaA = cs.fieldAreaA(d.fieldId);
     var h = '<div class="cult-card' + (d.status === 'finished' ? ' is-finished' : '') + '" data-act="detail" data-id="' + esc(r.id) + '">';
     h += '<div class="cult-card-head"><span class="cult-card-crop">🌱 ' + esc(d.cropName) + (d.variety ? '<small>（' + esc(d.variety) + '）</small>' : '') + '</span>' + condChip(d) +
       (d.status === 'finished' ? chip('muted', '終了') : '') + '</div>';
@@ -595,7 +617,8 @@
       h += '<div class="cult-next">' + catChip(n.category) + '<b>次: ' + esc(n.name) + '</b> ' +
         '<span class="cult-next-date">' + esc(dateWithDow(n.start)) + (n.end && n.end !== n.start ? '〜' + esc(dateWithDow(n.end)) : '') + '</span>' +
         '<span class="cult-next-rel">' + esc(relLabel(n.start, n.end)) + '</span>' +
-        '<div class="cult-next-basis">' + esc(n.basis) + '</div></div>';
+        '<div class="cult-next-basis">' + esc(n.basis) + '</div>' +
+        instanceMatsChipsHtml(n, areaA) + '</div>';
     } else if (d.status === 'active' && pred) {
       h += '<div class="cult-next cult-muted">予定している作業はすべて完了しています</div>';
     }
@@ -654,6 +677,7 @@
     h += syncStatusHtml();
 
     h += '<div class="cult-table-wrap"><table class="cult-table cult-timeline"><thead><tr><th>区分</th><th>作業</th><th>日付</th><th>算出根拠</th><th>状態</th><th>操作</th></tr></thead><tbody>';
+    var areaA = cs.fieldAreaA(d.fieldId);
     pred.instances.forEach(function (it) {
       var muted = it.status === 'na' || it.status === 'skipped' || it.status === 'unreached';
       var dateCell;
@@ -666,7 +690,7 @@
       }
       h += '<tr class="' + (muted ? 'is-muted' : '') + (it.status === 'done' ? ' is-done' : '') + '">' +
         '<td data-label="区分">' + catChip(it.category) + '</td>' +
-        '<td data-label="作業"><b>' + esc(it.name) + '</b>' + (it.note ? '<div class="cult-note">' + esc(it.note) + '</div>' : '') + '</td>' +
+        '<td data-label="作業"><b>' + esc(it.name) + '</b>' + instanceMatsChipsHtml(it, areaA) + (it.note ? '<div class="cult-note">' + esc(it.note) + '</div>' : '') + '</td>' +
         '<td data-label="日付">' + dateCell + '</td>' +
         '<td data-label="算出根拠">' + esc(it.basis) + (it.srcMix && cs.srcMixLabel(it.srcMix) ? '<div class="cult-note">気象: ' + esc(cs.srcMixLabel(it.srcMix)) + '</div>' : '') + '</td>' +
         '<td data-label="状態">' + instStatusHtml(it, sched) + '</td>' +
@@ -677,8 +701,50 @@
     }
     h += '</tbody></table></div>';
 
+    h += renderSettingMaterials(d, setting, areaA);
     h += renderManualAdd(r);
     h += renderActuals(r, pred);
+    return h;
+  }
+
+  function renderSettingMaterials(d, setting, areaA) {
+    var cs = CS();
+    var ferts = (setting && setting.fertilizers) || [];
+    var pests = (setting && setting.pesticides) || [];
+    if (!ferts.length && !pests.length) return '';
+    var workNames = {};
+    ((setting && setting.works) || []).forEach(function (w) { workNames[w.id] = w.name; });
+    var linkLabel = function (m) {
+      var wn = m.workId && workNames[m.workId] ? workNames[m.workId] : '作物共通';
+      return m.round > 0 ? (wn + '（' + m.round + '回目）') : wn;
+    };
+    var npk = cs.calcNpkPer10a(ferts);
+    var h = '<div class="cult-section">';
+    h += '<div class="cult-section-head"><b>🧪🧴 登録されている施肥・農薬</b>' +
+      (areaA > 0 ? '<span class="cult-chip cult-chip--info">圃場面積 ' + esc(areaA) + 'a で換算表示</span>' : '') +
+      (npk.hasAny ? '<span class="cult-chip cult-chip--ok">10a成分計 N:' + esc(npk.n) + ' / P:' + esc(npk.p) + ' / K:' + esc(npk.k) + 'kg</span>' : '') +
+      '<span class="cult-spacer"></span>' +
+      '<button type="button" class="cult-link-btn" data-act="open-setting-crop" data-crop="' + esc(d.cropName) + '">栽培設定で編集</button></div>';
+    if (ferts.length) {
+      h += '<div style="font-size:12px;font-weight:700;color:#4e342e;margin:4px 0;">🧪 施肥内容</div><div class="cult-mat-chips" style="margin-bottom:8px;">';
+      ferts.forEach(function (f) {
+        var extra = f.note ? '（' + f.note + '）' : '';
+        h += '<span class="cult-mat-chip cult-mat-chip--fert"><b>' + esc(linkLabel(f)) + '</b>: ' + esc(cs.formatFertilizerLine(f, areaA) + extra) + '</span>';
+      });
+      h += '</div>';
+    }
+    if (pests.length) {
+      h += '<div style="font-size:12px;font-weight:700;color:#1a237e;margin:4px 0;">🧴 農薬内容</div><div class="cult-mat-chips">';
+      pests.forEach(function (p) {
+        var extraBits = [];
+        if (p.method) extraBits.push(p.method);
+        if (p.phiDays != null) extraBits.push('収穫' + p.phiDays + '日前');
+        if (p.note) extraBits.push(p.note);
+        h += '<span class="cult-mat-chip cult-mat-chip--pest"><b>' + esc(linkLabel(p)) + '</b>: ' + esc(cs.formatPesticideLine(p, areaA) + (extraBits.length ? '（' + extraBits.join('・') + '）' : '')) + '</span>';
+      });
+      h += '</div>';
+    }
+    h += '</div>';
     return h;
   }
 
@@ -942,9 +1008,11 @@
       var note = el('cultFormPreviewNote');
       if (note) note.textContent = (fieldId ? '地点: 選んだ最初の圃場' : '地点: 地図の中心') + '・予報 ' + u.mdLabel(series.fcstEnd) + 'まで、以降は平年値';
       var h = '<div class="cult-table-wrap"><table class="cult-table"><thead><tr><th>区分</th><th>作業</th><th>予定日</th><th>算出根拠</th></tr></thead><tbody>';
+      var previewArea = cs.fieldAreaA(fieldId);
       res.instances.forEach(function (it) {
         h += '<tr class="' + (it.status === 'na' || it.status === 'unreached' ? 'is-muted' : '') + (it.status === 'done' ? ' is-done' : '') + '"><td>' + catChip(it.category) + '</td><td>' + esc(it.name) +
           (it.status === 'done' ? ' ' + chip('ok', '✓ 記録済み') : '') +
+          instanceMatsChipsHtml(it, previewArea) +
           (it.note ? '<div class="cult-note">' + esc(it.note) + '</div>' : '') + '</td><td>' + esc(dateWithDow(it.start)) +
           (it.end && it.end !== it.start ? '〜' + esc(dateWithDow(it.end)) : '') + '</td><td>' + esc(it.basis) + '</td></tr>';
       });

@@ -635,7 +635,7 @@ async function fetchWeatherAndUpdateUI(options) {
     : { lat: lat, lng: lng, placeId: placeId, refreshModal: false, isolate: false };
 
   try {
-    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
+    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&current=temperature_2m,relative_humidity_2m,pressure_msl,weather_code,wind_speed_10m,wind_direction_10m,precipitation&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,precipitation_probability,relative_humidity_2m,wind_speed_10m,wind_direction_10m,pressure_msl,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunshine_duration,wind_speed_10m_max,sunrise,sunset&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
 
     let today = new Date();
     let formatYMD = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
@@ -1689,7 +1689,19 @@ function loadData(options) {
       loadedPolygons[p.id] = { ...p };
     });
     window.loadedPolygons = loadedPolygons;
+    if (Array.isArray(data.vehicles)) {
+      window._scheduleVehicles = data.vehicles;
+      if (!Array.isArray(window.pdlMobileVehicles) || !window.pdlMobileVehicles.length) {
+        window.pdlMobileVehicles = data.vehicles;
+      }
+    }
+    if (window.VehicleDispatch && Array.isArray(data.vehicleReservations)) {
+      window.VehicleDispatch.setReservationsCache(data.vehicleReservations);
+    }
     updateMapVisuals();
+    if (typeof window.renderScheduleVehicleReserveBanner_ === 'function') {
+      window.renderScheduleVehicleReserveBanner_();
+    }
   };
 
   if (cachedStr && !silentRetry) {
@@ -1739,6 +1751,13 @@ function loadData(options) {
     }
     if (typeof window.scheduleSowingNurseryPrefetch_ === 'function') {
       window.scheduleSowingNurseryPrefetch_(1200);
+    }
+    if (window.InventoryUI && typeof window.InventoryUI.reload === 'function') {
+      setTimeout(() => {
+        if (window.InventoryUI && typeof window.InventoryUI.reload === 'function') {
+          window.InventoryUI.reload().catch(() => { });
+        }
+      }, 1500);
     }
   }).catch(e => {
     console.error('getScheduleData failed', e);
@@ -1865,6 +1884,9 @@ function hydrateSchedInitDataFromCache_() {
     if (parsed.pdl && Array.isArray(parsed.pdl.crops)) {
       window._schedPdlCrops = parsed.pdl.crops;
     }
+    if (parsed.pdl && Array.isArray(parsed.pdl.materials) && window.InventoryUI) {
+      window.InventoryUI.onInitData(parsed.pdl.materials);
+    }
     if (Array.isArray(parsed.polygons)) {
       const mapById = {};
       parsed.polygons.forEach(item => {
@@ -1890,6 +1912,9 @@ function ensureScheduleInitDataLoaded_(forceFetch) {
     try { localStorage.setItem('passionMapInitData', JSON.stringify(data)); } catch (e) { }
     if (data.pdl && Array.isArray(data.pdl.crops)) {
       window._schedPdlCrops = data.pdl.crops;
+    }
+    if (data.pdl && Array.isArray(data.pdl.materials) && window.InventoryUI) {
+      window.InventoryUI.onInitData(data.pdl.materials);
     }
     const mapById = {};
     data.polygons.forEach(item => {
@@ -2260,17 +2285,25 @@ function showPopup(p, latLng) {
     let cl = String(t.workName).includes('⚠️') ? 'color:#d32f2f; font-weight:bold; background:#ffebee;' : (t.isOverdue ? 'color:#d32f2f; font-weight:bold;' : 'color:#333;');
     const tagPart = (t.tag || t.person) ? ` / <span style="color:#e91e63;font-weight:bold;">${t.tag || t.person}</span>` : '';
     const traysPart = (t.trays || t.hours) ? ` · ${t.trays || t.hours}` : '';
-    const kindBadge = t.isCultivationHistory
+    const kindBadge = t.isAiInstruction
+      ? '<span style="background:#ede7f6;color:#5e35b1;border:1px solid #b39ddb;padding:0 5px;border-radius:4px;font-size:10px;margin-right:4px;font-weight:bold;">🤖AI指示</span>'
+      : t.isCultivationHistory
       ? '<span style="background:#f1f8e9;color:#2e7d32;border:1px solid #c5e1a5;padding:0 5px;border-radius:4px;font-size:10px;margin-right:4px;">📒栽培歴</span>'
       : t.cpKind === 'work'
       ? '<span style="background:#c8e6c9;color:#1b5e20;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">品目作業</span>'
       : (t.cpKind === 'plant' ? '<span style="background:#dcedc8;color:#33691e;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">定植</span>'
         : (t.cpKind === 'sow' ? '<span style="background:#fff9c4;color:#f57f17;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">播種</span>'
           : (t.cpKind === 'procure' ? '<span style="background:#ffe0b2;color:#e65100;padding:1px 5px;border-radius:4px;font-size:10px;margin-right:4px;">調達</span>' : '')));
+    const chMatLine = (t.isCultivationHistory && t.chMaterialsText)
+      ? `<div style="font-size:11px;color:#4e342e;margin-top:2px;line-height:1.35;">${String(t.chMaterialsText).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`
+      : '';
+    const aiNoteLine = (t.isAiInstruction && t.notes)
+      ? `<div style="font-size:11px;color:#4527a0;margin-top:2px;line-height:1.35;white-space:pre-wrap;">${String(t.notes).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`
+      : '';
     return `<div style="${cl} border-bottom:1px solid #eee; padding:6px;">
                     <div style="margin-bottom:4px;">${formatWorkStatusBadgeHtml(t)}</div>
                     <span style="background:#e3f2fd; color:#1a73e8; padding:2px 4px; border-radius:4px; font-size:10px; margin-right:4px;">${t.dept}</span>
-                    ${kindBadge}<b>${t.workName}</b><br>
+                    ${kindBadge}<b>${t.workName}</b>${chMatLine}${aiNoteLine}<br>
                     <small>${t.cropName ? t.cropName : ''}${tagPart}${traysPart}</small><br>
                     <small>期間: ${t.schedDate}〜${t.deadline}</small>
                     ${formatDayPlansBadgeHtml(t)}
@@ -3447,6 +3480,9 @@ window.switchScheduleView = function (mode) {
     else if (mode === 'gantt') titleEl.textContent = 'ガント（前後5日）';
     else titleEl.textContent = currentDept;
   }
+  if (typeof window.renderScheduleVehicleReserveBanner_ === 'function') {
+    window.renderScheduleVehicleReserveBanner_();
+  }
   if (mode === 'tasks') {
     renderScheduleTasksTable_();
   } else if (mode === 'gantt') {
@@ -3977,8 +4013,10 @@ function renderScheduleTasksTable_() {
       const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
       const taskUsersHtml = (!isMid && taskUsers.length)
         ? '<div style="margin-top:5px;">' + taskUsers.map(u => {
-          const n = String(u.userName || u.userId || '').replace(/</g, '&lt;');
-          const st = u.done ? 'opacity:0.5;text-decoration:line-through;' : '';
+          const rawName = (typeof u === 'string') ? u : (u && (u.userName || u.userId)) || '';
+          const n = String(rawName).replace(/</g, '&lt;');
+          if (!n) return '';
+          const st = (u && typeof u === 'object' && u.done) ? 'opacity:0.5;text-decoration:line-through;' : '';
           return '<span class="sched-chip" style="background:#e8f5e9;color:#2e7d32;' + st + '">👤' + n + '</span>';
         }).join('') + '</div>'
         : '';
@@ -3993,6 +4031,16 @@ function renderScheduleTasksTable_() {
           ' onclick="event.stopPropagation(); window.openCultivationHistoryModal && openCultivationHistoryModal({ recordId: \'' + escAttr_(String(t.chRecordId || '').replace(/[\\']/g, '')) + '\' })">📒 栽培歴' +
           (chCatLabel ? '・' + chCatLabel : '') + '</span></div>'
         : '';
+      const chMatHtml = (t.isCultivationHistory && t.chMaterialsText)
+        ? `<div class="sched-subtext" style="color:#4e342e;margin-top:3px;line-height:1.35;">${escHtml_(t.chMaterialsText)}</div>`
+        : '';
+      const aiUrgency = t.aiInstruction && t.aiInstruction.urgency ? `（${t.aiInstruction.urgency}）` : '';
+      const aiBadgeHtml = t.isAiInstruction
+        ? `<div style="margin-top:4px;"><span class="sched-chip" style="background:#ede7f6;color:#5e35b1;border:1px solid #b39ddb;">🤖 AI作業指示${escHtml_(aiUrgency)}</span></div>`
+        : '';
+      const aiNotesHtml = (t.isAiInstruction && t.notes)
+        ? `<div class="sched-subtext" style="color:#4527a0;margin-top:3px;line-height:1.4;white-space:pre-wrap;">${escHtml_(t.notes)}</div>`
+        : '';
       const safeWork = String(t.workName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const safeField = String(t.fieldName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const safeCrop = String(t.cropName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -4000,17 +4048,23 @@ function renderScheduleTasksTable_() {
       const safePoly = String(t.polyId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const safeRec = String(t.recordId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const completeBtn = `<button type="button" class="sched-complete-btn" onclick="completeScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}', ${isMid ? 1 : 0}, '${safePoly}', '${safeRec}')">完了</button>`;
+      const dispatchBtn = isMid
+        ? ''
+        : `<button type="button" class="sched-veh-btn" onclick="openScheduleVehicleDispatchModal_(${idx})" title="使用車両・軽トラ配車を設定">🛻 配車</button>`;
       const deleteBtn = isMid
         ? ''
         : `<button type="button" class="sched-delete-btn" onclick="deleteScheduleFromList(${Number(t.sheetRow) || 0}, '${safeKey}', '${safeWork}', '${safeField}', '${safeCrop}')">削除</button>`;
-      const actionCell = `<div class="sched-action-btns">${completeBtn}${deleteBtn}</div>`;
+      const actionCell = `<div class="sched-action-btns">${completeBtn}${dispatchBtn}${deleteBtn}</div>`;
+      const vehiclesHtml = (typeof window.buildScheduleRowVehiclesHtml_ === 'function')
+        ? window.buildScheduleRowVehiclesHtml_(t)
+        : '';
       const checkCell = `<input type="checkbox" class="sched-row-check" data-sched-key="${escAttr_(rowKey)}" ${isChecked ? 'checked' : ''} onchange="toggleSchedRowSelect_('${String(rowKey).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', this.checked)" title="一括完了の対象">`;
       const schedDateVal = isMid ? (t.workDate || t.schedDate) : t.schedDate;
       const deadlineVal = isMid ? '-' : t.deadline;
       return `<tr class="${rowClassList.join(' ')}" data-sched-idx="${idx}">
                       <td class="sched-check-col" data-label="選択">${checkCell}</td>
                       <td class="sched-col-status" data-label="ステータス"><div class="sched-cell-val">${statusHtml}</div></td>
-                      <td class="sched-col-work" data-label="作業名"><div class="sched-cell-val">${workLabel}${chBadgeHtml}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</div></td>
+                      <td class="sched-col-work" data-label="作業名"><div class="sched-cell-val">${workLabel}${vehiclesHtml}${aiBadgeHtml}${aiNotesHtml}${chBadgeHtml}${chMatHtml}${taskUsersHtml}${midAuthorHtml}${dayPlansHtml}</div></td>
                       <td class="sched-col-dept" data-label="部署"><div class="sched-cell-val">${buildInlineDeptSelectHtml_(t)}</div></td>
                       <td class="sched-col-crop" data-label="作物・品種・TAG"><div class="sched-cell-val">${cropCell}</div></td>
                       <td class="sched-col-field" data-label="圃場/看板名"><div class="sched-cell-val">${escHtml_(t.fieldName || '-')}</div></td>
@@ -4033,8 +4087,13 @@ window.refreshScheduleDataCache_ = async function () {
     if (typeof updateMapVisuals === 'function') updateMapVisuals();
     const modal = document.getElementById('scheduleModal');
     if (modal && modal.style.display === 'flex') {
+      if (typeof window.renderScheduleVehicleReserveBanner_ === 'function') {
+        window.renderScheduleVehicleReserveBanner_();
+      }
       if (window._scheduleViewMode === 'tasks') {
         renderScheduleTasksTable_();
+      } else if (window._scheduleViewMode === 'gantt') {
+        renderScheduleGantt_();
       } else if (window._scheduleViewMode === 'harvest') {
         window._harvestingFieldsCache = null;
         loadHarvestingFieldsView_();
@@ -4065,6 +4124,471 @@ window.openScheduleGantt = function () {
   if (modal) modal.style.display = 'flex';
   if (typeof window.switchScheduleView === 'function') {
     window.switchScheduleView('gantt');
+  }
+};
+
+// ==========================================
+// 🛻 軽トラ翌日利用希望バナー & 作業予定配車 UI
+// ==========================================
+window._schedVehBannerRange = window._schedVehBannerRange || 'tomorrow';
+window._schedVehBannerCollapsed = false;
+window._schedVehBannerAddOpen = false;
+window._schedModalSelectedVehicles = window._schedModalSelectedVehicles || {};
+
+window.getScheduleTaskDateForVehicleCheck_ = function (t) {
+  if (!t) return '';
+  const vd = window.VehicleDispatch;
+  const norm = vd ? vd.normYmd : (s => String(s || '').slice(0, 10));
+  return norm(t.schedDateYmd || t.deadlineYmd || '');
+};
+
+window.buildScheduleRowVehiclesHtml_ = function (t) {
+  const list = Array.isArray(t && t.assignedVehicles) ? t.assignedVehicles : [];
+  if (!list.length) return '';
+  const vd = window.VehicleDispatch;
+  const esc = vd ? vd.escHtml : escHtml_;
+  const checkDate = window.getScheduleTaskDateForVehicleCheck_(t);
+  const excludeId = t.id || t.scheduleKey || t.sheetRow || '';
+  const statusMap = (vd && checkDate)
+    ? vd.buildDateVehicleStatusMap(checkDate, globalSchedules || [], excludeId)
+    : {};
+  return '<div class="sched-veh-row-badges">' + list.map(function (v) {
+    const vid = vd ? vd.normalizeVehicleId(v.id || v.name) : String(v.id || v.name || '');
+    const st = statusMap[vid];
+    const hasRes = !!(st && st.reservations && st.reservations.length);
+    const hasSched = !!(st && st.schedules && st.schedules.length);
+    const warnParts = [];
+    if (hasRes) warnParts.push('希望:' + st.reservations.map(r => r.userName || '希望').join('・'));
+    if (hasSched) warnParts.push('他作業:' + st.schedules.map(s => s.workName || '予定').join('・'));
+    const warnTitle = warnParts.length ? (' title="重複注意: ' + esc(warnParts.join(' / ')) + '"') : '';
+    return '<span class="sched-veh-badge' + (warnParts.length ? ' is-conflict' : '') + '"' + warnTitle + '>🛻 ' +
+      esc(v.name || v.plateNumber || vid) + (warnParts.length ? ' ⚠️' : '') + '</span>';
+  }).join('') + '</div>';
+};
+
+window.setScheduleVehBannerRange_ = function (range) {
+  window._schedVehBannerRange = range || 'tomorrow';
+  window.renderScheduleVehicleReserveBanner_();
+};
+
+window.toggleScheduleVehBannerCollapse_ = function () {
+  window._schedVehBannerCollapsed = !window._schedVehBannerCollapsed;
+  window.renderScheduleVehicleReserveBanner_();
+};
+
+window.toggleScheduleVehBannerAddForm_ = function () {
+  window._schedVehBannerAddOpen = !window._schedVehBannerAddOpen;
+  window.renderScheduleVehicleReserveBanner_();
+};
+
+window.refreshScheduleVehicleReservations_ = async function () {
+  const vd = window.VehicleDispatch;
+  if (!vd) return;
+  await Promise.all([
+    vd.ensureVehiclesLoaded().catch(function () { }),
+    vd.loadReservations({ force: true }).catch(function () { })
+  ]);
+  window.renderScheduleVehicleReserveBanner_();
+  if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+  else if (window._scheduleViewMode === 'gantt') renderScheduleGantt_();
+};
+
+window.saveScheduleBannerVehicleReservation_ = async function () {
+  const vd = window.VehicleDispatch;
+  if (!vd) return;
+  const sel = document.getElementById('schedBannerAddVehSelect');
+  const dateEl = document.getElementById('schedBannerAddVehDate');
+  const noteEl = document.getElementById('schedBannerAddVehNote');
+  const vid = vd.normalizeVehicleId(sel ? sel.value : '');
+  const dateYmd = vd.normYmd(dateEl ? dateEl.value : '');
+  if (!vid || !dateYmd) {
+    alert('軽トラと利用日を選択してください');
+    return;
+  }
+  const matched = vd.findVehicleByRef({ id: vid });
+  try {
+    await vd.saveReservation({
+      dateYmd: dateYmd,
+      vehicleId: vid,
+      vehicleName: matched ? vd.formatVehicleLabel(matched) : vid,
+      vehicleType: (matched && (matched.vehicleType || matched.type)) || '軽トラ',
+      plateNumber: (matched && matched.plateNumber) || '',
+      note: String(noteEl ? noteEl.value : '').trim(),
+      source: 'schedule_banner'
+    });
+    window._schedVehBannerAddOpen = false;
+    window.renderScheduleVehicleReserveBanner_();
+    if (window._scheduleViewMode === 'gantt') renderScheduleGantt_();
+    if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+  } catch (e) {
+    alert('登録に失敗しました: ' + (e.message || e));
+  }
+};
+
+window.deleteScheduleVehicleReservation_ = async function (resId, label) {
+  const vd = window.VehicleDispatch;
+  if (!vd || !resId) return;
+  if (!confirm('「' + (label || 'この軽トラ利用希望') + '」を解除しますか？')) return;
+  try {
+    await vd.deleteReservation(String(resId));
+    window.renderScheduleVehicleReserveBanner_();
+    if (window._scheduleViewMode === 'gantt') renderScheduleGantt_();
+    if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+  } catch (e) {
+    alert('解除に失敗しました: ' + (e.message || e));
+  }
+};
+
+window.renderScheduleVehicleReserveBanner_ = function () {
+  const el = document.getElementById('scheduleVehicleReserveBanner');
+  const vd = window.VehicleDispatch;
+  if (!el) return;
+  const mode = window._scheduleViewMode || 'tasks';
+  if (!vd || (mode !== 'tasks' && mode !== 'gantt')) {
+    el.style.display = 'none';
+    return;
+  }
+
+  if (!window._schedVehInitialFetchStarted) {
+    window._schedVehInitialFetchStarted = true;
+    Promise.all([
+      vd.ensureVehiclesLoaded().catch(function () { }),
+      vd.loadReservations().catch(function () { })
+    ]).then(function () {
+      if (document.getElementById('scheduleModal')?.style.display === 'flex') {
+        window.renderScheduleVehicleReserveBanner_();
+      }
+    });
+  }
+
+  const esc = vd.escHtml;
+  const today = vd.todayYmd();
+  const tomorrow = vd.tomorrowYmd();
+  const weekEnd = vd.addDaysYmd(today, 6);
+  const all = vd.getReservationsCache().filter(function (r) { return r && r.dateYmd >= today; });
+  const todayItems = all.filter(function (r) { return r.dateYmd === today; });
+  const tomorrowItems = all.filter(function (r) { return r.dateYmd === tomorrow; });
+  const weekItems = all.filter(function (r) { return r.dateYmd >= today && r.dateYmd <= weekEnd; });
+
+  const range = window._schedVehBannerRange || 'tomorrow';
+  const shown = range === 'today' ? todayItems : (range === 'week' ? weekItems : tomorrowItems);
+  const keiTrucks = vd.listVehicles({ keiTruckOnly: true });
+  const totalTrucks = keiTrucks.length;
+  const uniqueTrucksInRange = new Set(shown.map(function (r) { return vd.normalizeVehicleId(r.vehicleId || r.vehicleName); })).size;
+
+  const statusByDate = {};
+  shown.forEach(function (r) {
+    if (!statusByDate[r.dateYmd]) {
+      statusByDate[r.dateYmd] = vd.buildDateVehicleStatusMap(r.dateYmd, globalSchedules || []);
+    }
+  });
+
+  const rangeLabel = range === 'today'
+    ? ('今日 ' + vd.formatMdJa(today))
+    : (range === 'week' ? '直近7日' : ('明日 ' + vd.formatMdJa(tomorrow)));
+  const countBadge = totalTrucks > 0
+    ? (uniqueTrucksInRange + ' / ' + totalTrucks + '台')
+    : (shown.length + '件');
+
+  let chipsHtml = '';
+  if (!shown.length) {
+    chipsHtml = '<div style="font-size:12px; color:#8D6E63; margin-top:6px;">' + esc(rangeLabel) + ' の軽トラ利用希望はありません' +
+      (range !== 'week' && weekItems.length ? '（直近7日には ' + weekItems.length + '件あります）' : '') + '</div>';
+  } else {
+    chipsHtml = '<div class="sched-veh-list">' + shown.map(function (r) {
+      const vid = vd.normalizeVehicleId(r.vehicleId || r.vehicleName);
+      const st = statusByDate[r.dateYmd] && statusByDate[r.dateYmd][vid];
+      const dupRes = st && st.reservations && st.reservations.length > 1;
+      const dupSched = st && st.schedules && st.schedules.length > 0;
+      const isConflict = !!(dupRes || dupSched);
+      const conflictNote = dupRes
+        ? '⚠️ 重複希望'
+        : (dupSched ? ('📋 配車有(' + st.schedules[0].workName + ')') : '');
+      const labelForDel = vd.formatMdJa(r.dateYmd) + ' ' + (r.vehicleName || vid) + '（' + (r.userName || '') + '）';
+      const safeId = esc(r.id || '').replace(/'/g, "\\'");
+      const safeDelLabel = esc(labelForDel).replace(/'/g, "\\'");
+      return '<div class="sched-veh-chip' + (isConflict ? ' is-conflict' : '') + '">' +
+        (range === 'week' ? ('<b>' + esc(vd.relativeDateBadge(r.dateYmd)) + '</b> ') : '') +
+        '<span>🛻 <b>' + esc(r.vehicleName || vid) + '</b></span>' +
+        '<span>👤 ' + esc(r.userName || '未設定') + '</span>' +
+        (r.note ? ('<span style="color:#6D4C41;">（' + esc(r.note) + '）</span>') : '') +
+        (conflictNote ? ('<span style="font-size:10px; font-weight:bold; color:#C62828;">' + esc(conflictNote) + '</span>') : '') +
+        '<button type="button" class="sched-veh-del-btn" onclick="deleteScheduleVehicleReservation_(\'' + safeId + '\', \'' + safeDelLabel + '\')" title="解除">×</button>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  let addFormHtml = '';
+  if (window._schedVehBannerAddOpen) {
+    const vehOpts = (keiTrucks.length ? keiTrucks : vd.listVehicles({ sortKeiTruckFirst: true })).map(function (v) {
+      const vid = vd.normalizeVehicleId(v.id);
+      return '<option value="' + esc(vid) + '">' + esc(vd.formatVehicleLabel(v)) + '</option>';
+    }).join('');
+    const defDate = range === 'today' ? today : tomorrow;
+    addFormHtml = '<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #FFCC80; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">' +
+      '<select id="schedBannerAddVehSelect" style="padding:6px 8px; border:1px solid #FFB74D; border-radius:6px; font-size:12px; background:#fff;">' +
+      (vehOpts || '<option value="">登録車両なし</option>') + '</select>' +
+      '<input type="date" id="schedBannerAddVehDate" value="' + esc(defDate) + '" style="padding:5px 8px; border:1px solid #FFB74D; border-radius:6px; font-size:12px; font-weight:bold; background:#fff;">' +
+      '<input type="text" id="schedBannerAddVehNote" placeholder="用途メモ（任意）" style="flex:1; min-width:130px; padding:6px 8px; border:1px solid #FFB74D; border-radius:6px; font-size:12px; background:#fff;">' +
+      '<button type="button" onclick="saveScheduleBannerVehicleReservation_()" style="background:#E65100; color:#fff; border:none; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:bold; cursor:pointer;">登録</button>' +
+      '</div>';
+  }
+
+  el.innerHTML =
+    '<div class="sched-veh-banner-head">' +
+    '  <div class="sched-veh-banner-title">' +
+    '    <span>🛻 軽トラ利用希望</span>' +
+    '    <span style="background:#FFE0B2; color:#BF360C; padding:2px 8px; border-radius:999px; font-size:11px;">' + esc(rangeLabel) + ': ' + esc(countBadge) + '</span>' +
+    '  </div>' +
+    '  <div class="sched-veh-banner-controls">' +
+    '    <button type="button" class="sched-veh-range-btn' + (range === 'tomorrow' ? ' is-active' : '') + '" onclick="setScheduleVehBannerRange_(\'tomorrow\')">明日 (' + tomorrowItems.length + ')</button>' +
+    '    <button type="button" class="sched-veh-range-btn' + (range === 'today' ? ' is-active' : '') + '" onclick="setScheduleVehBannerRange_(\'today\')">今日 (' + todayItems.length + ')</button>' +
+    '    <button type="button" class="sched-veh-range-btn' + (range === 'week' ? ' is-active' : '') + '" onclick="setScheduleVehBannerRange_(\'week\')">直近7日 (' + weekItems.length + ')</button>' +
+    '    <button type="button" class="sched-veh-range-btn" onclick="toggleScheduleVehBannerAddForm_()" title="軽トラ希望を追加">＋希望</button>' +
+    '    <button type="button" class="sched-veh-range-btn" onclick="refreshScheduleVehicleReservations_()" title="最新化">🔄</button>' +
+    '    <button type="button" class="sched-veh-range-btn" onclick="toggleScheduleVehBannerCollapse_()">' + (window._schedVehBannerCollapsed ? '開く ▼' : '閉じる ▲') + '</button>' +
+    '  </div>' +
+    '</div>' +
+    (window._schedVehBannerCollapsed ? '' : (chipsHtml + addFormHtml));
+  el.style.display = 'block';
+};
+
+window.readScheduleModalSelectedVehicles_ = function (pickerId) {
+  const root = document.getElementById(pickerId);
+  if (!root) return [];
+  const out = [];
+  root.querySelectorAll('.sched-veh-check:checked').forEach(function (chk) {
+    out.push({
+      id: String(chk.getAttribute('data-veh-id') || chk.value || '').trim(),
+      name: String(chk.getAttribute('data-veh-name') || '').trim(),
+      plateNumber: String(chk.getAttribute('data-veh-plate') || '').trim(),
+      vehicleType: String(chk.getAttribute('data-veh-type') || '').trim()
+    });
+  });
+  return out;
+};
+
+window.onScheduleModalVehicleCheckChange_ = function (pickerId, noticeId, dateYmd, excludeId) {
+  const root = document.getElementById(pickerId);
+  if (root) {
+    root.querySelectorAll('.sched-veh-check').forEach(function (chk) {
+      const opt = chk.closest('.sched-veh-opt');
+      if (opt) opt.classList.toggle('is-selected', !!chk.checked);
+    });
+  }
+  const selected = window.readScheduleModalSelectedVehicles_(pickerId);
+  window._schedModalSelectedVehicles[pickerId] = selected;
+  window.updateScheduleModalVehicleWarn_(pickerId, dateYmd, excludeId);
+};
+
+window.updateScheduleModalVehicleWarn_ = function (pickerId, dateYmd, excludeId) {
+  const vd = window.VehicleDispatch;
+  const root = document.getElementById(pickerId);
+  const warnEl = root ? root.querySelector('.sched-veh-warn-box') : null;
+  if (!vd || !warnEl) return;
+  const selected = window.readScheduleModalSelectedVehicles_(pickerId);
+  const statusMap = dateYmd ? vd.buildDateVehicleStatusMap(dateYmd, globalSchedules || [], excludeId) : {};
+  const msgs = [];
+  selected.forEach(function (v) {
+    const vid = vd.normalizeVehicleId(v.id);
+    const st = statusMap[vid];
+    if (!st) return;
+    const parts = [];
+    if (st.reservations && st.reservations.length) {
+      parts.push('利用希望あり（' + st.reservations.map(r => (r.userName || '他') + (r.note ? ':' + r.note : '')).join('、') + '）');
+    }
+    if (st.schedules && st.schedules.length) {
+      parts.push('他作業へ配車済（' + st.schedules.map(s => s.workName || '予定').join('、') + '）');
+    }
+    if (parts.length) msgs.push('<b>' + vd.escHtml(v.name || vid) + '</b>: ' + vd.escHtml(parts.join(' ／ ')));
+  });
+  if (msgs.length) {
+    warnEl.innerHTML = '⚠️ 重複注意<br>' + msgs.join('<br>');
+    warnEl.style.display = 'block';
+  } else {
+    warnEl.innerHTML = '';
+    warnEl.style.display = 'none';
+  }
+};
+
+window.renderScheduleModalVehiclePicker_ = function (opts) {
+  opts = opts || {};
+  const vd = window.VehicleDispatch;
+  const noticeEl = document.getElementById(opts.noticeId);
+  const pickerEl = document.getElementById(opts.pickerId);
+  if (!pickerEl || !vd) return;
+  const esc = vd.escHtml;
+  const dateYmd = vd.normYmd(opts.dateYmd) || vd.todayYmd();
+  const excludeId = opts.excludeId || '';
+
+  if (Array.isArray(opts.selectedVehicles)) {
+    window._schedModalSelectedVehicles[opts.pickerId] = opts.selectedVehicles.slice();
+  }
+  const curSelected = window._schedModalSelectedVehicles[opts.pickerId] || [];
+  const selectedSet = new Set(curSelected.map(function (v) { return vd.normalizeVehicleId(v.id || v.name); }));
+
+  const dateRes = vd.getReservationsForDate(dateYmd);
+  const statusMap = vd.buildDateVehicleStatusMap(dateYmd, globalSchedules || [], excludeId);
+
+  if (noticeEl) {
+    if (dateRes.length) {
+      noticeEl.innerHTML =
+        '<div style="font-weight:bold; color:#E65100; margin-bottom:4px;">🛻 ' + esc(vd.relativeDateBadge(dateYmd)) + ' の軽トラ利用希望（' + dateRes.length + '件）</div>' +
+        dateRes.map(function (r) {
+          return '<div>・<b>' + esc(r.vehicleName || r.vehicleId) + '</b>：👤 ' + esc(r.userName || '未設定') +
+            (r.note ? ('（' + esc(r.note) + '）') : '') + '</div>';
+        }).join('');
+      noticeEl.style.display = 'block';
+    } else {
+      noticeEl.innerHTML = '<span style="color:#78909C;">🛻 ' + esc(vd.relativeDateBadge(dateYmd)) + ' の軽トラ利用希望はありません</span>';
+      noticeEl.style.display = 'block';
+    }
+  }
+
+  const vehicles = vd.listVehicles({ sortKeiTruckFirst: true });
+  if (!vehicles.length && !window._scheduleVehiclesLoadingOnce) {
+    window._scheduleVehiclesLoadingOnce = true;
+    vd.ensureVehiclesLoaded().then(function () {
+      window.renderScheduleModalVehiclePicker_(opts);
+    }).catch(function () { });
+  }
+
+  const safePicker = esc(opts.pickerId).replace(/'/g, "\\'");
+  const safeNotice = esc(opts.noticeId || '').replace(/'/g, "\\'");
+  const safeDate = esc(dateYmd).replace(/'/g, "\\'");
+  const safeEx = esc(String(excludeId || '')).replace(/'/g, "\\'");
+
+  const optsHtml = vehicles.length
+    ? vehicles.map(function (v) {
+      const vid = vd.normalizeVehicleId(v.id);
+      const label = vd.formatVehicleLabel(v);
+      const plate = String(v.plateNumber || v.vehicleNumber || '').trim();
+      const vType = String(v.vehicleType || v.type || '').trim();
+      const on = selectedSet.has(vid) || selectedSet.has(label);
+      const st = statusMap[vid];
+      const tags = [];
+      if (st && st.reservations && st.reservations.length) {
+        tags.push('希望:' + st.reservations.map(r => r.userName || '有').join('・'));
+      }
+      if (st && st.schedules && st.schedules.length) {
+        tags.push('配車:' + st.schedules.length + '件');
+      }
+      const warnCls = tags.length ? ' has-warn' : '';
+      return '<label class="sched-veh-opt' + (on ? ' is-selected' : '') + warnCls + '">' +
+        '<input type="checkbox" class="sched-veh-check" data-veh-id="' + esc(vid) + '" data-veh-name="' + esc(label) + '" data-veh-plate="' + esc(plate) + '" data-veh-type="' + esc(vType) + '" ' + (on ? 'checked' : '') +
+        ' onchange="onScheduleModalVehicleCheckChange_(\'' + safePicker + '\',\'' + safeNotice + '\',\'' + safeDate + '\',\'' + safeEx + '\')">' +
+        '<span>' + (vd.isKeiTruck(v) ? '🛻 ' : '🚐 ') + esc(label) + '</span>' +
+        (tags.length ? ('<span style="font-size:10px; color:#E65100; font-weight:bold;">(' + esc(tags.join('/')) + ')</span>') : '') +
+        '</label>';
+    }).join('')
+    : '<span style="font-size:11px; color:#607D8B;">登録された車両がありません</span>';
+
+  pickerEl.innerHTML =
+    '<div style="font-size:11px; font-weight:bold; color:#00695C;">🛻 使用車両・配車（任意）</div>' +
+    '<div class="sched-veh-picker-grid">' + optsHtml + '</div>' +
+    '<div class="sched-veh-warn-box" style="display:none;"></div>';
+  window.updateScheduleModalVehicleWarn_(opts.pickerId, dateYmd, excludeId);
+};
+
+window.refreshAddWorkVehiclePicker_ = function (selectedVehicles) {
+  const dateYmd = document.getElementById('addWorkSchedDate')?.value || '';
+  window.renderScheduleModalVehiclePicker_({
+    pickerId: 'addWorkVehiclePicker',
+    noticeId: 'addWorkVehicleReserveNotice',
+    dateYmd: dateYmd,
+    selectedVehicles: selectedVehicles
+  });
+};
+
+window.refreshGanttAddVehiclePicker_ = function (selectedVehicles) {
+  const dateYmd = document.getElementById('ganttAddStart')?.value || '';
+  window.renderScheduleModalVehiclePicker_({
+    pickerId: 'ganttAddVehiclePicker',
+    noticeId: 'ganttAddVehicleReserveNotice',
+    dateYmd: dateYmd,
+    selectedVehicles: selectedVehicles
+  });
+};
+
+window.openScheduleVehicleDispatchModal_ = function (rowIndex) {
+  const t = (window._schedTableRows || [])[rowIndex];
+  const modal = document.getElementById('scheduleVehicleDispatchModal');
+  if (!t || !modal) return;
+  window._schedDispatchTarget = t;
+  const titleEl = document.getElementById('schedVehDispatchTitle');
+  const metaEl = document.getElementById('schedVehDispatchMeta');
+  if (titleEl) titleEl.textContent = '🛻 配車設定 — ' + (t.workName || '作業');
+  const vd = window.VehicleDispatch;
+  const dateYmd = window.getScheduleTaskDateForVehicleCheck_(t) || (vd ? vd.todayYmd() : '');
+  if (metaEl) {
+    metaEl.innerHTML =
+      '<b>' + escHtml_(t.workName || '-') + '</b>' +
+      (t.cropName ? (' ／ 🌱 ' + escHtml_(t.cropName)) : '') +
+      (t.fieldName ? (' ／ 📍 ' + escHtml_(t.fieldName)) : '') +
+      '<br>予定日: <b>' + escHtml_(dateYmd ? (vd ? vd.relativeDateBadge(dateYmd) : dateYmd) : '未定') + '</b>' +
+      (t.person ? (' ／ 担当: ' + escHtml_(t.person)) : '');
+  }
+  window.renderScheduleModalVehiclePicker_({
+    pickerId: 'schedVehDispatchPicker',
+    noticeId: 'schedVehDispatchNotice',
+    dateYmd: dateYmd,
+    excludeId: t.id || t.scheduleKey || t.sheetRow || '',
+    selectedVehicles: Array.isArray(t.assignedVehicles) ? t.assignedVehicles : []
+  });
+  modal.style.display = 'flex';
+};
+
+window.closeScheduleVehicleDispatchModal_ = function () {
+  const modal = document.getElementById('scheduleVehicleDispatchModal');
+  if (modal) modal.style.display = 'none';
+  window._schedDispatchTarget = null;
+};
+
+window.saveScheduleVehicleDispatch_ = async function () {
+  const t = window._schedDispatchTarget;
+  if (!t) return;
+  const btn = document.getElementById('schedVehDispatchSaveBtn');
+  const selected = window.readScheduleModalSelectedVehicles_('schedVehDispatchPicker');
+  const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  if (btn) { btn.disabled = true; btn.textContent = '保存中...'; }
+  try {
+    const res = await callGAS('updateWorkScheduleVehicles', {
+      id: t.id || '',
+      sheetRow: t.sheetRow || '',
+      scheduleKey: t.scheduleKey || '',
+      workName: t.workName || '',
+      fieldName: t.fieldName || '',
+      cropName: t.cropName || '',
+      assignedVehicles: selected,
+      userName: userName
+    });
+    const nextVehicles = (res && Array.isArray(res.assignedVehicles)) ? res.assignedVehicles : selected;
+    t.assignedVehicles = nextVehicles;
+    (globalSchedules || []).forEach(function (item) {
+      if (!item) return;
+      if ((t.id && item.id === t.id) || (t.scheduleKey && item.scheduleKey === t.scheduleKey)) {
+        item.assignedVehicles = nextVehicles;
+      }
+    });
+    try {
+      const cached = JSON.parse(localStorage.getItem('passionMapScheduleData') || 'null');
+      if (cached && Array.isArray(cached.activeSchedules)) {
+        cached.activeSchedules.forEach(function (item) {
+          if ((t.id && item.id === t.id) || (t.scheduleKey && item.scheduleKey === t.scheduleKey)) {
+            item.assignedVehicles = nextVehicles;
+          }
+        });
+        localStorage.setItem('passionMapScheduleData', JSON.stringify(cached));
+      }
+    } catch (eCache) { }
+    window.closeScheduleVehicleDispatchModal_();
+    if (window._scheduleViewMode === 'tasks') renderScheduleTasksTable_();
+    else if (window._scheduleViewMode === 'gantt') renderScheduleGantt_();
+    window.renderScheduleVehicleReserveBanner_();
+  } catch (e) {
+    alert('配車の保存に失敗しました: ' + (e.message || e));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '保存する'; }
   }
 };
 
@@ -4342,6 +4866,9 @@ window.openAddWorkModal = function (defaultKind) {
   }
   const resDiv = document.getElementById('addWorkResult');
   if (resDiv) resDiv.textContent = '';
+  if (typeof window.refreshAddWorkVehiclePicker_ === 'function') {
+    window.refreshAddWorkVehiclePicker_([]);
+  }
   modal.style.display = 'flex';
 };
 
@@ -4368,10 +4895,14 @@ window.submitAddWorkFromModal = async function () {
   const deadline = document.getElementById('addWorkDeadline')?.value || '';
   const hours = (document.getElementById('addWorkHours')?.value || '').trim();
   const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  const assignedVehicles = (typeof window.readScheduleModalSelectedVehicles_ === 'function')
+    ? window.readScheduleModalSelectedVehicles_('addWorkVehiclePicker')
+    : [];
   if (btn) { btn.disabled = true; btn.textContent = '登録中...'; }
   try {
     await callGAS('addWorkSchedule', {
-      workName, fieldName, cropName, person, schedDate, deadline, hours, polyId, userName
+      workName, fieldName, cropName, person, schedDate, deadline, hours, polyId, userName,
+      assignedVehicles
     });
     if (resDiv) { resDiv.textContent = '作業一覧に登録しました'; resDiv.style.color = '#2e7d32'; }
     closeAddWorkModal();
@@ -7279,7 +7810,7 @@ function startScheduleOptimisticBoot_() {
 startScheduleOptimisticBoot_();
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js?v=schedule', { scope: '/schedule' });
+  navigator.serviceWorker.register('/sw.js?v=schedule-share1', { scope: '/schedule' });
 }
 window.updatePlanRatio = function (planId, index, value) {
   const plan = cpPlans.find(p => p.id === planId);
@@ -9134,6 +9665,10 @@ function ganttBarTitle_(t) {
   const wn = String(t && t.workName || '').trim();
   const extra = [ganttCropDescriptor_(t), ganttWorkSubLabel_(t)].filter(Boolean).join(' · ');
   let title = extra ? (wn + ' — ' + extra) : wn;
+  const vehs = Array.isArray(t && t.assignedVehicles) ? t.assignedVehicles : [];
+  if (vehs.length) {
+    title += ' [🛻 ' + vehs.map(function (v) { return v.name || v.plateNumber || v.id; }).filter(Boolean).join('・') + ']';
+  }
   if (t && t.isCompleted) {
     title += ' [完了' + (t.compDate ? ' ' + t.compDate : '') + ']';
   } else if (t && t.workStatusLabel) {
@@ -9223,8 +9758,12 @@ function buildGanttTableHtml_(days, today, rows, winStart) {
     const isToday = d.getTime() === today.getTime();
     const isWe = d.getDay() === 0 || d.getDay() === 6;
     const ymd = ganttYmd_(d);
+    const dayVehRes = window.VehicleDispatch ? window.VehicleDispatch.getReservationsForDate(ymd) : [];
+    const vehBadge = dayVehRes.length
+      ? '<span class="gantt-veh-badge" title="' + ganttEsc_('軽トラ利用希望: ' + dayVehRes.map(function (r) { return (r.vehicleName || r.vehicleId) + '(' + (r.userName || '') + ')'; }).join('、')) + '">🛻' + dayVehRes.length + '</span>'
+      : '';
     html += '<th class="' + (isToday ? 'gantt-day-today' : (isWe ? 'gantt-day-weekend' : '')) + ' gantt-day-click" onclick="onGanttDayHeaderClick_(\'' + ymd + '\')" title="この日に追加">'
-      + (d.getMonth() + 1) + '/' + d.getDate() + '<div style="font-size:10px;font-weight:normal;">' + weekday[d.getDay()] + '</div></th>';
+      + (d.getMonth() + 1) + '/' + d.getDate() + vehBadge + '<div style="font-size:10px;font-weight:normal;">' + weekday[d.getDay()] + '</div></th>';
   });
   html += '</tr></thead><tbody>';
 
@@ -9255,9 +9794,14 @@ function buildGanttTableHtml_(days, today, rows, winStart) {
     const barTitle = ganttBarTitle_(t);
     const barClass = t.isCompleted ? ' is-done' : (canDrag ? '' : ' is-mid');
     const leftStyle = t.isCompleted ? ' style="opacity:0.65;text-decoration:line-through;"' : '';
+    const ganttVehs = Array.isArray(t.assignedVehicles) ? t.assignedVehicles : [];
+    const ganttVehHtml = ganttVehs.length
+      ? '<div class="gantt-veh-sub">🛻 ' + ganttEsc_(ganttVehs.map(function (v) { return v.name || v.plateNumber || v.id; }).filter(Boolean).join('、')) + '</div>'
+      : '';
     html += '<tr data-gantt-row="' + idx + '">';
     html += '<td class="gantt-work-label"' + leftStyle + ' title="' + ganttEsc_(barTitle) + '">' + ganttStatusBadge_(t) + ' ' + ganttEsc_(leftMain)
       + (sub ? '<div style="font-size:10px;font-weight:normal;color:#888;">' + ganttEsc_(sub) + '</div>' : '')
+      + ganttVehHtml
       + (t.isCompleted && t.compDate ? '<div style="font-size:10px;color:#757575;">完了 ' + ganttEsc_(t.compDate) + '</div>' : '')
       + '</td>';
     html += '<td colspan="11" class="gantt-cell" onclick="onGanttTrackClick_(event)">';
@@ -9459,6 +10003,9 @@ window.openGanttAddModal = async function () {
   }
   const resDiv = document.getElementById('ganttAddResult');
   if (resDiv) resDiv.textContent = '';
+  if (typeof window.refreshGanttAddVehiclePicker_ === 'function') {
+    window.refreshGanttAddVehiclePicker_([]);
+  }
   modal.style.display = 'flex';
   if (!window._ganttMasters) {
     try {
@@ -9750,6 +10297,9 @@ window.submitGanttAddWork_ = async function () {
   const selectedOpt = fieldSel ? fieldSel.options[fieldSel.selectedIndex] : null;
   const polyId = selectedOpt ? (selectedOpt.dataset.polyId || '') : '';
   const userName = localStorage.getItem('passionMapUserName') || localStorage.getItem('passionMapUserId') || '';
+  const assignedVehicles = (typeof window.readScheduleModalSelectedVehicles_ === 'function')
+    ? window.readScheduleModalSelectedVehicles_('ganttAddVehiclePicker')
+    : [];
 
   if (isFree) {
     // フリー入力は必須なし。どれか1項目（作業名/作物/カテゴリ/圃場/期限）があればOK
@@ -9774,16 +10324,24 @@ window.submitGanttAddWork_ = async function () {
       schedDate: start,
       deadline: end,
       polyId: polyId,
-      userName: userName
+      userName: userName,
+      assignedVehicles: assignedVehicles
     });
     closeGanttAddModal();
     const data = await callGAS('getScheduleData');
     if (data) {
       localStorage.setItem('passionMapScheduleData', JSON.stringify(data));
       globalSchedules = data.activeSchedules || [];
+      if (Array.isArray(data.vehicles)) window._scheduleVehicles = data.vehicles;
+      if (window.VehicleDispatch && Array.isArray(data.vehicleReservations)) {
+        window.VehicleDispatch.setReservationsCache(data.vehicleReservations);
+      }
       if (typeof updateMapVisuals === 'function') updateMapVisuals();
     }
     renderScheduleGantt_();
+    if (typeof window.renderScheduleVehicleReserveBanner_ === 'function') {
+      window.renderScheduleVehicleReserveBanner_();
+    }
   } catch (e) {
     if (resDiv) { resDiv.textContent = '登録失敗: ' + (e.message || e); resDiv.style.color = '#c62828'; }
   } finally {

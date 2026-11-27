@@ -125,10 +125,31 @@
       try { return !!global.isWorkerAdmin(); } catch (e) { /* 下の判定へ */ }
     }
     try {
-      return (localStorage.getItem('passionMapUserRole') || '') === '管理者';
+      const role = String(localStorage.getItem('passionMapUserRole') || '').trim().toLowerCase();
+      return role === '管理者' || role === 'admin' || role === 'owner';
     } catch (e) {
       return false;
     }
+  }
+
+  function isSettingsAllowed() {
+    if (global.INVENTORY_ALLOW_SETTINGS === false) return false;
+    if (global.INVENTORY_ALLOW_SETTINGS === true) return true;
+    const btn = document.getElementById('btnInventory');
+    if (btn && btn.getAttribute('data-inventory-settings') === 'false') return false;
+    if (document.getElementById('workerTopBar')) return false;
+    try {
+      if (/\/worker2?\.html$/i.test(String(location.pathname || ''))) return false;
+    } catch (e) { /* ignore */ }
+    return true;
+  }
+
+  function isItemEditAllowed() {
+    if (global.INVENTORY_ALLOW_EDIT === false) return false;
+    if (global.INVENTORY_ALLOW_EDIT === true) return true;
+    const btn = document.getElementById('btnInventory');
+    if (btn && btn.getAttribute('data-inventory-edit') === 'false') return false;
+    return isSettingsAllowed();
   }
 
   function defaultSettings() {
@@ -552,7 +573,7 @@
       <header class="invm-header">
         <div class="invm-title">📦 在庫管理</div>
         <button type="button" class="invm-icon-btn" data-act="reload" aria-label="再読み込み" title="再読み込み">🔄</button>
-        <button type="button" class="invm-icon-btn" data-act="settings" aria-label="設定" title="カテゴリ・仕入れ先・発注メールの設定">⚙️</button>
+        ${isSettingsAllowed() ? '<button type="button" class="invm-icon-btn" data-act="settings" aria-label="設定" title="カテゴリ・仕入れ先・発注メールの設定">⚙️</button>' : ''}
         <button type="button" class="invm-icon-btn" data-act="close" aria-label="閉じる" title="閉じる">✕</button>
       </header>
       <div class="invm-toolbar">
@@ -582,7 +603,7 @@
     switch (el.getAttribute('data-act')) {
       case 'close': close(); break;
       case 'reload': load().catch(() => {}); break;
-      case 'settings': openSettings(); break;
+      case 'settings': if (isSettingsAllowed()) openSettings(); break;
       case 'new': openItemForm(null, currentCategoryFilter() ? { category: currentCategoryFilter() } : null); break;
       case 'scan-search': scanForSearch(); break;
       case 'filter':
@@ -593,7 +614,7 @@
         state.filter = LOW;
         renderAll();
         break;
-      case 'add-category': addCategoryFromList(); break;
+      case 'add-category': if (isSettingsAllowed()) addCategoryFromList(); break;
       case 'detail': openDetail(id); break;
       case 'add':
       case 'use':
@@ -625,7 +646,7 @@
     if (lowCount) html += chip(LOW, '⚠️ 要補充', lowCount, 'is-alert');
     allCategories().forEach((c) => { html += chip(c, `${iconOfCategory(c)} ${c}`, counts[c] || 0); });
     if (counts['']) html += chip('', '未分類', counts['']);
-    html += '<button type="button" class="invm-chip is-add" data-act="add-category">＋ カテゴリ</button>';
+    if (isSettingsAllowed()) html += '<button type="button" class="invm-chip is-add" data-act="add-category">＋ カテゴリ</button>';
     box.innerHTML = html;
   }
 
@@ -745,6 +766,7 @@
   }
 
   async function addCategoryFromList() {
+    if (!isSettingsAllowed()) return;
     const c = String((await askText('カテゴリを追加', 'カテゴリ名', '', { placeholder: '例: 培土' })) || '').trim().slice(0, 30);
     if (!c) return;
     const base = (settings().categories || []).slice();
@@ -919,6 +941,7 @@
   // ---------------------------------------------------------------- 登録・編集フォーム
   function openItemForm(item, prefill, opts = {}) {
     const isEdit = !!(item && item.id);
+    if (isEdit && !isItemEditAllowed()) return null;
     const src = Object.assign({
       name: '', barcode: '', category: '', size: '', volUnit: '', stock: '', stockUnit: '',
       signId: '', signName: '', supplierName: '', supplierEmail: '', minStock: '', orderQty: '',
@@ -1020,7 +1043,7 @@
 
     const renderCats = () => {
       sheet.q('[data-cats]').innerHTML = cats.map((c) => `<button type="button" class="invm-chip${c === selectedCat ? ' is-active' : ''}" data-cat="${esc(c)}">${esc(iconOfCategory(c))} ${esc(c)}</button>`).join('') +
-        '<button type="button" class="invm-chip is-add" data-f="add-cat">＋ 追加</button>';
+        (isSettingsAllowed() ? '<button type="button" class="invm-chip is-add" data-f="add-cat">＋ 追加</button>' : '');
     };
 
     const renderPhotos = () => {
@@ -1337,6 +1360,7 @@
     };
 
     const addCategoryFromForm = async () => {
+      if (!isSettingsAllowed()) return;
       const c = String((await askText('カテゴリを追加', 'カテゴリ名', '', { placeholder: '例: 培土' })) || '').trim().slice(0, 30);
       if (!c) return;
       if (cats.indexOf(c) < 0) cats.push(c);
@@ -1432,8 +1456,12 @@
       if (t.pending) lines.push(`📧 ${fmtDate(t.lastOrderMs, true)} に${lastQty} 発注済みです（入荷待ち）。届いたら「補充」を記録してください。`);
       else if (!isEmail(it.supplierEmail)) lines.push('仕入れ先のメールアドレスが未登録のため、自動発注できません。');
       else if (!(Number(it.orderQty) > 0)) lines.push('発注個数が未設定のため、自動発注できません。');
-      else if (!senderReady()) lines.push('発注メールの差出人（⚙️ 設定）が未設定のため、自動発注できません。');
-      else if (o.autoSend === false) lines.push('自動発注はオフです（⚙️ 設定）。');
+      else if (!senderReady()) lines.push(isSettingsAllowed()
+        ? '発注メールの差出人（⚙️ 設定）が未設定のため、自動発注できません。'
+        : '発注メールの差出人が未設定のため、自動発注できません（管理画面・予定画面の在庫設定で登録できます）。');
+      else if (o.autoSend === false) lines.push(isSettingsAllowed()
+        ? '自動発注はオフです（⚙️ 設定）。'
+        : '自動発注はオフです（管理画面・予定画面の在庫設定で変更できます）。');
       else if (t.waitInterval) lines.push(`⏳ 発注間隔のため、次の自動発注は ${fmtDate(t.nextMs)} 以降です。`);
       status = `<div class="invm-note-box is-error">${lines.map(esc).join('<br>')}</div>`;
     } else if (t.pending) {
@@ -1465,7 +1493,7 @@
       </div>
       <div class="invm-row">
         <button type="button" class="invm-btn is-order is-grow" data-d="order">📧 発注する</button>
-        <button type="button" class="invm-btn is-grow" data-d="edit">✏️ 編集</button>
+        ${isItemEditAllowed() ? '<button type="button" class="invm-btn is-grow" data-d="edit">✏️ 編集</button>' : ''}
       </div>
       <dl class="invm-kv">${rows.join('')}</dl>`;
   }
@@ -1545,7 +1573,7 @@
         const act = d.getAttribute('data-d');
         const cur = findItem(sheet.itemId);
         if (!cur) return;
-        if (act === 'edit') openItemForm(cur);
+        if (act === 'edit') { if (isItemEditAllowed()) openItemForm(cur); }
         else if (act === 'order') openOrderSheet(cur.id);
         else openMoveSheet(cur.id, act);
         return;
@@ -1581,8 +1609,12 @@
     const ready = senderReady();
     const warn = [];
     if (t.pending) warn.push(`${fmtDate(t.lastOrderMs, true)} に発注済み（入荷待ち）です。重複にご注意ください。`);
-    if (!hasEmail) warn.push('仕入れ先のメールアドレスが未登録です（✏️ 編集で登録できます）。');
-    if (!ready) warn.push('差出人（あなたの名前・メールアドレス）が未設定です（⚙️ 設定で登録できます）。');
+    if (!hasEmail) warn.push(isItemEditAllowed()
+      ? '仕入れ先のメールアドレスが未登録です（✏️ 編集で登録できます）。'
+      : '仕入れ先のメールアドレスが未登録です（管理画面・予定画面の資材編集で登録できます）。');
+    if (!ready) warn.push(isSettingsAllowed()
+      ? '差出人（あなたの名前・メールアドレス）が未設定です（⚙️ 設定で登録できます）。'
+      : '差出人（あなたの名前・メールアドレス）が未設定です（管理画面・予定画面の在庫設定で登録できます）。');
     const html = `
       <dl class="invm-kv">
         <dt>宛先</dt><dd>${esc(it.supplierName || '（仕入れ先未登録）')}${hasEmail ? `<br><small>${esc(it.supplierEmail)}</small>` : ''}</dd>
@@ -1676,6 +1708,7 @@
 
   // ---------------------------------------------------------------- 設定
   function openSettings() {
+    if (!isSettingsAllowed()) return;
     const s = settings();
     const o = Object.assign({}, defaultSettings().order, s.order || {});
     const admin = isAdmin();

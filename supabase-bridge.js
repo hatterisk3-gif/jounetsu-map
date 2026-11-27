@@ -2935,7 +2935,15 @@
           restSelectAll_('tools', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
           restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc'),
           restSelectAll_('work_schedules', 'org_id=eq.' + encOrg + '&schedule_kind=eq.work&work_name=ilike.*%E5%95%8F%E9%A1%8C%E5%AF%BE%E5%BF%9C*&select=work_name,payload,field_id'),
-          restFetch('rest/v1/org_settings?org_id=eq.' + encOrg + '&setting_key=eq.user_profile_prefs&limit=1').catch(function () { return []; })
+          restFetch('rest/v1/org_settings?org_id=eq.' + encOrg + '&setting_key=eq.user_profile_prefs&limit=1').catch(function () { return []; }),
+          restSelectAll_(
+            'work_schedules',
+            'org_id=eq.' + encOrg +
+            '&schedule_kind=eq.work&is_completed=eq.false' +
+            '&legacy_id=like.' + encodeURIComponent('ch:*') +
+            '&select=id,legacy_id,field_id,field_name,crop_name,work_name,department,planned_date,due_date,payload' +
+            '&order=planned_date.asc,created_at.asc'
+          ).catch(function () { return []; })
         ]);
 
       var fieldRows = results[0];
@@ -2951,6 +2959,7 @@
       var materialRows = results[10] || [];
       var reportSchedRows = results[11] || [];
       var profilePrefRows = results[12] || [];
+      var cultSchedRows = results[13] || [];
       var profilePrefs = (Array.isArray(profilePrefRows) && profilePrefRows.length && profilePrefRows[0] && typeof profilePrefRows[0].value === 'object' && profilePrefRows[0].value)
         ? profilePrefRows[0].value
         : {};
@@ -3290,6 +3299,8 @@
         });
       }
 
+      var cultFieldData = buildCultivationFieldData_(masterRows, cultSchedRows, fieldLegacyByUuid);
+
       return {
         pdl: {
           locations: locationNames,
@@ -3342,7 +3353,9 @@
           inspections: inspections,
           pastReports: pastReports,
           deliveryDestinations: deliveryDestinations,
-          vehicles: vehicles
+          vehicles: vehicles,
+          cultivationRecords: cultFieldData.records,
+          cultivationSchedules: cultFieldData.schedules
         },
         polygons: polygons,
         toukiList: toukiRows.map(function (t) { return t.legacy_id || t.id; }),
@@ -3411,6 +3424,96 @@
 
   // Phase 4 で設定する。Phase 3 の作業予定完了から、次の工程（調達→播種→定植→品目作業）を作る。
   var cpAdvanceScheduleChain_ = null;
+
+  var VEHICLE_RESERVATION_SETTING_KEY_ = 'vehicle.nextday.reservations';
+
+  function normVehId_(raw) {
+    return String(raw || '').trim().replace(/^veh:/, '');
+  }
+
+  function sanitizeAssignedVehicles_(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    var seen = {};
+    list.forEach(function (v) {
+      if (!v) return;
+      var obj = (typeof v === 'string') ? { id: v, name: v } : v;
+      var id = normVehId_(obj.id || obj.vehicleId || '');
+      var name = String(obj.name || obj.vehicleName || obj.label || obj.plateNumber || id).trim();
+      if (!id && !name) return;
+      var key = id || name;
+      if (seen[key]) return;
+      seen[key] = true;
+      out.push({
+        id: id,
+        name: name,
+        plateNumber: String(obj.plateNumber || '').trim(),
+        vehicleType: String(obj.vehicleType || obj.type || '').trim()
+      });
+    });
+    return out;
+  }
+
+  function normYmdSimple_(val) {
+    if (!val && val !== 0) return '';
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      var j = new Date(val.getTime() + 9 * 3600 * 1000);
+      return j.getUTCFullYear() + '-' + ('0' + (j.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + j.getUTCDate()).slice(-2);
+    }
+    var m = String(val).trim().replace(/\//g, '-').match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return '';
+    return m[1] + '-' + ('0' + Number(m[2])).slice(-2) + '-' + ('0' + Number(m[3])).slice(-2);
+  }
+
+  function addDaysYmdSimple_(ymd, deltaDays) {
+    var norm = normYmdSimple_(ymd);
+    if (!norm) return '';
+    var p = norm.split('-').map(Number);
+    var dt = new Date(Date.UTC(p[0], p[1] - 1, p[2] + (Number(deltaDays) || 0)));
+    return dt.getUTCFullYear() + '-' + ('0' + (dt.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + dt.getUTCDate()).slice(-2);
+  }
+
+  function sanitizeVehicleReservationItem_(raw, nowIso) {
+    if (!raw || typeof raw !== 'object') return null;
+    var dateYmd = normYmdSimple_(raw.dateYmd || raw.date || '');
+    var vehicleId = normVehId_(raw.vehicleId || raw.id_vehicle || '');
+    var vehicleName = String(raw.vehicleName || raw.name || '').trim();
+    if (!dateYmd || (!vehicleId && !vehicleName)) return null;
+    var userName = String(raw.userName || '').trim();
+    var userId = String(raw.userId || '').trim();
+    return {
+      id: String(raw.id || ('vres_' + genUuid_().slice(0, 12))).trim(),
+      dateYmd: dateYmd,
+      vehicleId: vehicleId || vehicleName,
+      vehicleName: vehicleName || vehicleId,
+      vehicleType: String(raw.vehicleType || '軽トラ').trim() || '軽トラ',
+      plateNumber: String(raw.plateNumber || '').trim(),
+      userName: userName,
+      userId: userId,
+      note: String(raw.note || '').trim(),
+      source: String(raw.source || 'work_record').trim(),
+      createdAt: String(raw.createdAt || nowIso || new Date().toISOString()),
+      updatedAt: String(nowIso || raw.updatedAt || new Date().toISOString())
+    };
+  }
+
+  function pruneOldVehicleReservations_(items, todayYmd) {
+    var cutoff = addDaysYmdSimple_(todayYmd, -14);
+    return (Array.isArray(items) ? items : []).filter(function (it) {
+      if (!it || !it.dateYmd) return false;
+      return !cutoff || it.dateYmd >= cutoff;
+    });
+  }
+
+  function sortVehicleReservations_(items) {
+    return (Array.isArray(items) ? items.slice() : []).sort(function (a, b) {
+      var dc = String(a.dateYmd || '').localeCompare(String(b.dateYmd || ''));
+      if (dc) return dc;
+      var vc = String(a.vehicleName || '').localeCompare(String(b.vehicleName || ''), 'ja');
+      if (vc) return vc;
+      return String(a.userName || '').localeCompare(String(b.userName || ''), 'ja');
+    });
+  }
 
   // ========================================================================
   // Phase 3: 予定・勤怠・休暇・日次/個人予定・トラッキング・設定 Supabase ハンドラ群
@@ -3792,13 +3895,17 @@
         restSelectAll_('work_schedules', 'org_id=eq.' + encodeURIComponent(orgId) + '&schedule_kind=in.(work,daily)&order=created_at.asc'),
         restSelectAll_('field_records', 'org_id=eq.' + encodeURIComponent(orgId) + '&record_type=eq.work&order=recorded_at.asc'),
         restSelectAll_('fields', 'org_id=eq.' + encodeURIComponent(orgId)),
-        restSelectAll_('org_masters', 'org_id=eq.' + encodeURIComponent(orgId) + '&is_active=eq.true&order=sort_order.asc')
+        restSelectAll_('org_masters', 'org_id=eq.' + encodeURIComponent(orgId) + '&is_active=eq.true&order=sort_order.asc'),
+        restSelectAll_('vehicles', 'org_id=eq.' + encodeURIComponent(orgId) + '&order=created_at.asc').catch(function () { return []; }),
+        restFetch('rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) + '&setting_key=eq.' + encodeURIComponent(VEHICLE_RESERVATION_SETTING_KEY_) + '&limit=1').catch(function () { return []; })
       ]);
 
       var schedRows = fetched[0];
       var workRecords = fetched[1];
       var fieldRows = fetched[2];
       var masterRows = fetched[3];
+      var vehicleRows = fetched[4] || [];
+      var vehResSettingRows = fetched[5] || [];
 
       var workDeptMap = {};
       var workCategories = [];
@@ -3933,14 +4040,24 @@
           chRecordId: chRecordId,
           chKey: String(p.chKey || ''),
           chCategory: String(p.chCategory || ''),
+          chFertilizers: Array.isArray(p.chFertilizers) ? p.chFertilizers : [],
+          chPesticides: Array.isArray(p.chPesticides) ? p.chPesticides : [],
+          chMaterialsText: String(p.chMaterialsText || ''),
           fieldIds: p.chFieldId ? [String(p.chFieldId)] : cpPlace.fieldIds,
           trays: p.hours || '',
           tag: p.person || '',
           periodLabel: String(p.chBasis || ''),
+          notes: String(p.notes || ''),
+          isAiInstruction: !!(p.isAiInstruction || p.aiInstruction),
+          aiInstruction: (p.aiInstruction && typeof p.aiInstruction === 'object') ? p.aiInstruction : null,
           scheduleKey: scheduleKey,
           sheetRow: p.sheetRow || r.id,
           placeId: p.placeId || '',
+          notes: String(p.notes || ''),
+          isAiInstruction: !!(p.isAiInstruction || p.aiInstruction),
+          aiInstruction: (p.aiInstruction && typeof p.aiInstruction === 'object') ? p.aiInstruction : null,
           taskUsers: Array.isArray(r.assigned_users) ? r.assigned_users : [],
+          assignedVehicles: sanitizeAssignedVehicles_(p.assignedVehicles),
           isMidWork: false,
           dayPlans: []
         };
@@ -4000,13 +4117,26 @@
         pg.harvestingDepts = harvestingFields[pg.name] || [];
       });
 
+      var vehicles = vehicleRows.map(mapVehicleRowToObj_);
+      var rawVehResVal = (Array.isArray(vehResSettingRows) && vehResSettingRows.length && vehResSettingRows[0].value)
+        ? vehResSettingRows[0].value
+        : {};
+      var rawVehResItems = Array.isArray(rawVehResVal.items) ? rawVehResVal.items : [];
+      var vehicleReservations = sortVehicleReservations_(
+        rawVehResItems
+          .map(function (it) { return sanitizeVehicleReservationItem_(it); })
+          .filter(function (it) { return !!(it && (!todayYmd || it.dateYmd >= todayYmd)); })
+      );
+
       return {
         polygons: polygons,
         activeSchedules: activeSchedules,
         completedSchedules: completedSchedules,
         midWorks: midWorks,
         workCategories: workCategories,
-        departments: departments
+        departments: departments,
+        vehicles: vehicles,
+        vehicleReservations: vehicleReservations
       };
     });
 
@@ -4024,6 +4154,9 @@
       var person = String(params.person || params.userName || '').trim();
       var notes = String(params.notes || '').trim();
       var polyId = String(params.polyId || '').trim();
+      var aiInstruction = (params.aiInstruction && typeof params.aiInstruction === 'object') ? params.aiInstruction : null;
+      var isAiInstruction = !!(params.isAiInstruction || aiInstruction);
+      var assignedVehicles = sanitizeAssignedVehicles_(params.assignedVehicles);
       var fRow = polyId ? await findFieldByAnyId_(orgId, polyId) : null;
       var legId = 'ws_' + genUuid_();
       var schedKey = buildScheduleKey_(workName, fieldName, cropName, sYmd, dYmd);
@@ -4049,12 +4182,15 @@
             hours: hours,
             person: person,
             notes: notes,
-            placeId: polyId
+            placeId: polyId,
+            isAiInstruction: isAiInstruction,
+            aiInstruction: aiInstruction,
+            assignedVehicles: assignedVehicles
           }
         })
       });
       writeAuditLog_(orgId, params.userName || person || 'ユーザー', '作業予定追加', fieldName || workName, workName);
-      return { success: true, workName: workName, fieldName: fieldName, id: legId };
+      return { success: true, workName: workName, fieldName: fieldName, id: legId, assignedVehicles: assignedVehicles };
     });
 
     registerAction('updateWorkScheduleDates', async function (params) {
@@ -4076,6 +4212,26 @@
       });
       writeAuditLog_(orgId, params.userName || 'ユーザー', '作業予定日更新', row.field_name || row.work_name, sYmd + '〜' + dYmd);
       return { success: true, sheetRow: params.sheetRow || row.id, schedDate: sYmd, deadline: dYmd };
+    });
+
+    registerAction('updateWorkScheduleVehicles', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var row = await findWorkScheduleRow_(orgId, 'work', Object.assign({}, params, { _wantCompleted: false }));
+      if (!row) throw new Error('更新対象の作業予定が見つかりませんでした');
+      if (row.is_completed) throw new Error('この作業は既に完了済みです');
+      var assignedVehicles = sanitizeAssignedVehicles_(params.assignedVehicles);
+      var payload = Object.assign({}, row.payload || {}, {
+        assignedVehicles: assignedVehicles
+      });
+      await restFetch('rest/v1/work_schedules?id=eq.' + encodeURIComponent(row.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ payload: payload })
+      });
+      var vehLabel = assignedVehicles.map(function (v) { return v.name || v.plateNumber || v.id; }).join('、') || 'なし';
+      writeAuditLog_(orgId, params.userName || 'ユーザー', '作業予定配車更新', row.field_name || row.work_name, vehLabel);
+      return { success: true, id: row.id, sheetRow: params.sheetRow || row.id, assignedVehicles: assignedVehicles };
     });
 
     registerAction('updateScheduleRowDept', async function (params) {
@@ -6331,7 +6487,7 @@
     });
 
     return [
-      'getScheduleData', 'addWorkSchedule', 'updateWorkScheduleDates', 'updateScheduleRowDept',
+      'getScheduleData', 'addWorkSchedule', 'updateWorkScheduleDates', 'updateWorkScheduleVehicles', 'updateScheduleRowDept',
       'assignScheduleMember', 'getUserTodayAssignedSchedules', 'completeWorkSchedule',
       'bulkCompleteWorkSchedule', 'undoCompleteWorkSchedule', 'bulkUndoCompleteWorkSchedule',
       'deleteWorkSchedule', 'delegateCompleteWork', 'getScheduleGanttMasters',
@@ -11697,6 +11853,111 @@
       return { success: true };
     });
 
+    registerAction('vehicleReservation_list', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var todayYmd = formatJstNowParts_().dateDash;
+      var includeAll = params.includeAll === true;
+      var fromYmd = includeAll ? '' : (normYmdSimple_(params.fromYmd) || todayYmd);
+      var toYmd = normYmdSimple_(params.toYmd);
+      var raw = await readSettingP5_(orgId, VEHICLE_RESERVATION_SETTING_KEY_, { items: [] });
+      var list = (raw && Array.isArray(raw.items)) ? raw.items : [];
+      var cleaned = list
+        .map(function (it) { return sanitizeVehicleReservationItem_(it); })
+        .filter(Boolean);
+      if (fromYmd) {
+        cleaned = cleaned.filter(function (it) { return it.dateYmd >= fromYmd; });
+      }
+      if (toYmd) {
+        cleaned = cleaned.filter(function (it) { return it.dateYmd <= toYmd; });
+      }
+      return { items: sortVehicleReservations_(cleaned) };
+    });
+
+    registerAction('vehicleReservation_save', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var todayYmd = formatJstNowParts_().dateDash;
+      var nowIso = new Date().toISOString();
+      var raw = await readSettingP5_(orgId, VEHICLE_RESERVATION_SETTING_KEY_, { items: [] });
+      var existing = pruneOldVehicleReservations_(
+        ((raw && Array.isArray(raw.items)) ? raw.items : [])
+          .map(function (it) { return sanitizeVehicleReservationItem_(it); })
+          .filter(Boolean),
+        todayYmd
+      );
+
+      var inputs = Array.isArray(params.items) ? params.items : [params];
+      var savedItems = [];
+      inputs.forEach(function (inp) {
+        var nextItem = sanitizeVehicleReservationItem_(inp, nowIso);
+        if (!nextItem) return;
+        var hitIdx = existing.findIndex(function (cur) {
+          if (inp && inp.id && cur.id === String(inp.id).trim()) return true;
+          return cur.dateYmd === nextItem.dateYmd &&
+            normVehId_(cur.vehicleId) === normVehId_(nextItem.vehicleId) &&
+            String(cur.userName || '').replace(/\s+/g, '') === String(nextItem.userName || '').replace(/\s+/g, '');
+        });
+        if (hitIdx >= 0) {
+          nextItem.id = existing[hitIdx].id;
+          nextItem.createdAt = existing[hitIdx].createdAt || nextItem.createdAt;
+          existing[hitIdx] = nextItem;
+        } else {
+          existing.push(nextItem);
+        }
+        savedItems.push(nextItem);
+      });
+
+      if (!savedItems.length) {
+        throw new Error('車両と利用日を指定してください');
+      }
+      var sorted = sortVehicleReservations_(existing);
+      var actor = String(params.userName || savedItems[0].userName || 'ユーザー').trim();
+      await upsertSettingP5_(orgId, VEHICLE_RESERVATION_SETTING_KEY_, { items: sorted, updatedAt: nowIso }, actor);
+      var detail = savedItems.map(function (it) { return it.dateYmd + ' ' + it.vehicleName; }).join('、');
+      writeLogP5_(orgId, actor, '軽トラ翌日利用設定', savedItems[0].vehicleName, detail);
+      return { success: true, item: savedItems[0], savedItems: savedItems, items: sorted };
+    });
+
+    registerAction('vehicleReservation_delete', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var todayYmd = formatJstNowParts_().dateDash;
+      var nowIso = new Date().toISOString();
+      var targetId = String(params.id || '').trim();
+      var targetDate = normYmdSimple_(params.dateYmd || params.date || '');
+      var targetVehId = normVehId_(params.vehicleId || '');
+      var targetUser = String(params.userName || '').replace(/\s+/g, '');
+
+      var raw = await readSettingP5_(orgId, VEHICLE_RESERVATION_SETTING_KEY_, { items: [] });
+      var existing = pruneOldVehicleReservations_(
+        ((raw && Array.isArray(raw.items)) ? raw.items : [])
+          .map(function (it) { return sanitizeVehicleReservationItem_(it); })
+          .filter(Boolean),
+        todayYmd
+      );
+      var removed = null;
+      var nextList = existing.filter(function (cur) {
+        var match = false;
+        if (targetId && cur.id === targetId) {
+          match = true;
+        } else if (targetDate && targetVehId && cur.dateYmd === targetDate && normVehId_(cur.vehicleId) === targetVehId) {
+          if (!targetUser || String(cur.userName || '').replace(/\s+/g, '') === targetUser) {
+            match = true;
+          }
+        }
+        if (match && !removed) removed = cur;
+        return !match;
+      });
+      var sorted = sortVehicleReservations_(nextList);
+      var actor = String(params.userName || (removed && removed.userName) || 'ユーザー').trim();
+      await upsertSettingP5_(orgId, VEHICLE_RESERVATION_SETTING_KEY_, { items: sorted, updatedAt: nowIso }, actor);
+      if (removed) {
+        writeLogP5_(orgId, actor, '軽トラ利用設定解除', removed.vehicleName, removed.dateYmd + ' ' + removed.vehicleName);
+      }
+      return { success: true, items: sorted };
+    });
+
     // ---- 3. Tools & Tool Usage (6 actions) ----
     registerAction('addToolToMaster', async function (params) {
       params = params || {};
@@ -11892,29 +12153,110 @@
     });
 
     // ---- 5. Manuals (3 actions) ----
+    function normalizeManualPhotoOut_(pItem, idx) {
+      if (typeof pItem === 'string') {
+        var u = pItem.trim();
+        if (!u) return null;
+        return {
+          id: 'p_' + idx,
+          url: u,
+          dataUrl: u,
+          caption: '',
+          badge: '',
+          inboxItemId: '',
+          rotation: 0
+        };
+      }
+      if (pItem && typeof pItem === 'object') {
+        var imgUrl = String(pItem.url || pItem.dataUrl || '').trim();
+        if (!imgUrl) return null;
+        return {
+          id: String(pItem.id || ('p_' + idx)),
+          url: imgUrl,
+          dataUrl: imgUrl,
+          caption: String(pItem.caption || ''),
+          badge: String(pItem.badge || ''),
+          inboxItemId: String(pItem.inboxItemId || ''),
+          rotation: Number(pItem.rotation) || 0
+        };
+      }
+      return null;
+    }
+
     registerAction('saveManualData', async function (params) {
       try {
         var manual = (params && params.manual) ? params.manual : params;
         if (!manual || !manual.id) return { success: false, message: '無効なデータ' };
         var orgId = await resolveCurrentOrgId_();
+        var nowIso = new Date().toISOString();
         var crops = Array.isArray(manual.crops)
           ? manual.crops.map(function (x) { return String(x || '').trim(); }).filter(Boolean)
           : String(manual.crop || '').split(/[,、]/).map(function (x) { return x.trim(); }).filter(Boolean);
+        var manualType = String(manual.manualType || '').trim();
+        if (manualType !== 'damage_alert' && manualType !== 'work' && manualType !== 'other') {
+          manualType = 'work';
+        }
         var linkedWork = {
           workNames: Array.isArray(manual.workNames) ? manual.workNames : (manual.workNames ? [manual.workNames] : []),
-          category: manual.category || '',
-          crops: crops
+          category: String(manual.category || ''),
+          crops: crops,
+          manualType: manualType,
+          authorName: String(manual.authorName || ''),
+          summary: String(manual.summary || ''),
+          createdAt: String(manual.createdAt || nowIso)
         };
         var photos = [];
         var inPhotos = Array.isArray(manual.photos) ? manual.photos : [];
         for (var i = 0; i < inPhotos.length; i++) {
           var pItem = inPhotos[i];
-          if (typeof pItem === 'string' && pItem.indexOf('data:') === 0) {
-            photos.push(await uploadOnePhotoP5_(pItem, 'manual_photos', 'manuals', manual.id));
-          } else if (pItem && typeof pItem === 'object' && pItem.url && String(pItem.url).indexOf('data:') === 0) {
-            photos.push(Object.assign({}, pItem, { url: await uploadOnePhotoP5_(pItem.url, 'manual_photos', 'manuals', manual.id) }));
-          } else {
-            photos.push(pItem);
+          if (typeof pItem === 'string') {
+            var sUrl = pItem.trim();
+            if (!sUrl) continue;
+            if (sUrl.indexOf('data:') === 0) {
+              var upStrUrl = await uploadOnePhotoP5_(sUrl, 'manual_photos', 'manuals', manual.id);
+              if (upStrUrl) {
+                photos.push({
+                  id: 'p_' + Date.now() + '_' + i,
+                  url: upStrUrl,
+                  caption: '',
+                  badge: '',
+                  inboxItemId: '',
+                  rotation: 0
+                });
+              }
+            } else {
+              photos.push({
+                id: 'p_' + Date.now() + '_' + i,
+                url: sUrl,
+                caption: '',
+                badge: '',
+                inboxItemId: '',
+                rotation: 0
+              });
+            }
+          } else if (pItem && typeof pItem === 'object') {
+            var dataSrc = '';
+            if (pItem.url && String(pItem.url).indexOf('data:') === 0) {
+              dataSrc = String(pItem.url);
+            } else if (pItem.dataUrl && String(pItem.dataUrl).indexOf('data:') === 0) {
+              dataSrc = String(pItem.dataUrl);
+            }
+            var finalUrl = '';
+            if (dataSrc) {
+              finalUrl = await uploadOnePhotoP5_(dataSrc, 'manual_photos', 'manuals', manual.id);
+            } else {
+              finalUrl = String(pItem.url || pItem.dataUrl || '').trim();
+            }
+            if (finalUrl) {
+              photos.push({
+                id: String(pItem.id || ('p_' + Date.now() + '_' + i)),
+                url: finalUrl,
+                caption: String(pItem.caption || ''),
+                badge: String(pItem.badge || ''),
+                inboxItemId: String(pItem.inboxItemId || ''),
+                rotation: Number(pItem.rotation) || 0
+              });
+            }
           }
         }
         var steps = [];
@@ -11949,7 +12291,22 @@
             method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(body)
           });
         }
-        return { success: true, id: manual.id };
+        var normalizedSaved = {
+          id: String(manual.id),
+          title: body.title,
+          workNames: linkedWork.workNames,
+          category: linkedWork.category,
+          crops: linkedWork.crops,
+          manualType: linkedWork.manualType,
+          authorName: linkedWork.authorName,
+          summary: linkedWork.summary,
+          notice: body.caution,
+          steps: steps,
+          photos: photos.map(function (p, idx) { return normalizeManualPhotoOut_(p, idx); }).filter(Boolean),
+          createdAt: linkedWork.createdAt,
+          updatedAt: nowIso
+        };
+        return { success: true, id: manual.id, manual: normalizedSaved };
       } catch (e) {
         return { success: false, message: e.message };
       }
@@ -11958,18 +12315,28 @@
     registerAction('getManualList', async function () {
       try {
         var orgId = await resolveCurrentOrgId_();
-        var rows = await restSelectAll_('manuals', 'org_id=eq.' + encodeURIComponent(orgId) + '&order=created_at.asc');
+        var rows = await restSelectAll_('manuals', 'org_id=eq.' + encodeURIComponent(orgId) + '&order=updated_at.desc');
         var manuals = rows.map(function (r) {
           var lw = (r.linked_work && typeof r.linked_work === 'object') ? r.linked_work : {};
+          var rawPhotos = Array.isArray(r.photos) ? r.photos : [];
+          var normPhotos = rawPhotos.map(function (p, idx) {
+            return normalizeManualPhotoOut_(p, idx);
+          }).filter(Boolean);
+          var mt = String(lw.manualType || '').trim();
+          if (mt !== 'damage_alert' && mt !== 'work' && mt !== 'other') mt = 'work';
           return {
             id: String(r.legacy_id || r.id),
             title: String(r.title || ''),
             workNames: Array.isArray(lw.workNames) ? lw.workNames : [],
             category: String(lw.category || ''),
             crops: Array.isArray(lw.crops) ? lw.crops : [],
+            manualType: mt,
+            authorName: String(lw.authorName || ''),
+            summary: String(lw.summary || ''),
             notice: String(r.caution || ''),
             steps: Array.isArray(r.steps) ? r.steps : [],
-            photos: Array.isArray(r.photos) ? r.photos : [],
+            photos: normPhotos,
+            createdAt: String(lw.createdAt || r.created_at || ''),
             updatedAt: String(r.updated_at || '')
           };
         });
@@ -14344,6 +14711,7 @@
       'addMachinePart', 'addMachineSymptom', 'addMachineMaintenanceContent', 'addMaintenanceContent',
       'saveRefuelRecord', 'getRefuelHistory', 'getMachineLastHourMeters',
       'vehicle_loadAll', 'vehicle_saveVehicle', 'vehicle_deleteVehicle', 'vehicle_saveLocation', 'vehicle_saveStatus',
+      'vehicleReservation_list', 'vehicleReservation_save', 'vehicleReservation_delete',
       'addToolToMaster', 'editToolInMaster', 'deleteToolFromMaster', 'updateToolStatus', 'updateToolLocations', 'getToolUsageHistory',
       'addMaterialToSign', 'editMaterial', 'updateMaterialLocations',
       'saveManualData', 'getManualList', 'deleteManualData',
@@ -14393,6 +14761,85 @@
     if (!m) return '';
     var d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + (Number(n) || 0)));
     return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+  }
+
+  /**
+   * 圃場タップメニュー表示用に「圃場と定植日が設定された栽培歴」と、その未完了作業予定を組み立てる
+   */
+  function buildCultivationFieldData_(masterRows, schedRows, fieldLegacyByUuid) {
+    var anchorByCrop = {};
+    var records = [];
+    var recById = {};
+    var fMap = fieldLegacyByUuid || {};
+    (masterRows || []).forEach(function (m) {
+      if (!m || m.is_active === false) return;
+      var d = (m.data && typeof m.data === 'object') ? m.data : {};
+      if (m.master_type === 'cult_setting') {
+        var cKey = String(d.cropName || m.name || '').trim();
+        if (cKey) anchorByCrop[cKey] = d.anchorLabel === 'sowing' ? 'sowing' : 'planting';
+      }
+    });
+    (masterRows || []).forEach(function (m) {
+      if (!m || m.is_active === false || m.master_type !== 'cult_record') return;
+      var d = (m.data && typeof m.data === 'object') ? m.data : {};
+      if (d.status === 'finished') return;
+      var cropName = String(d.cropName || '').trim();
+      var rawFid = String(d.fieldId || '').trim();
+      var plantDate = cultYmd_(d.plantDate);
+      if (!cropName || !rawFid || !plantDate) return;
+      var resolvedFid = String(fMap[rawFid] || rawFid);
+      var id = String(m.legacy_id || d.id || m.id || '');
+      if (!id) return;
+      var rec = {
+        id: id,
+        cropName: cropName,
+        variety: String(d.variety || '').trim(),
+        fieldId: resolvedFid,
+        fieldName: String(d.fieldName || ''),
+        plantDate: plantDate,
+        condition: String(d.condition || 'open'),
+        anchorLabel: anchorByCrop[cropName] || 'planting',
+        status: 'active'
+      };
+      records.push(rec);
+      recById[id] = rec;
+    });
+    var schedules = [];
+    (schedRows || []).forEach(function (r) {
+      if (!r) return;
+      var p = (r.payload && typeof r.payload === 'object') ? r.payload : {};
+      var recordId = String(p.chRecordId || '').trim();
+      var rec = recordId ? recById[recordId] : null;
+      if (!rec) return;
+      var rawSchedFid = String(p.chFieldId || r.field_id || '').trim();
+      var fieldId = rec.fieldId || String(fMap[rawSchedFid] || rawSchedFid);
+      if (!fieldId) return;
+      schedules.push({
+        id: String(r.id || ''),
+        recordId: recordId,
+        key: String(p.chKey || ''),
+        fieldId: fieldId,
+        fieldName: String(r.field_name || rec.fieldName || ''),
+        cropName: String(r.crop_name || rec.cropName || ''),
+        variety: String(p.chVariety || rec.variety || ''),
+        workName: String(r.work_name || ''),
+        dept: String(r.department || ''),
+        plannedDate: cultYmd_(r.planned_date),
+        dueDate: cultYmd_(r.due_date),
+        category: String(p.chCategory || ''),
+        basis: String(p.chBasis || ''),
+        materialsText: String(p.chMaterialsText || '')
+      });
+    });
+    schedules.sort(function (a, b) {
+      var pa = a.plannedDate || '9999-99-99';
+      var pb = b.plannedDate || '9999-99-99';
+      if (pa !== pb) return pa < pb ? -1 : 1;
+      var da = a.dueDate || '9999-99-99';
+      var db = b.dueDate || '9999-99-99';
+      return da < db ? -1 : (da > db ? 1 : 0);
+    });
+    return { records: records, schedules: schedules };
   }
 
   // cultivation-setting.js の baseWorkName と同じ規則（記録の作業名と予定の照合用）
@@ -14486,6 +14933,9 @@
         });
         done++;
       }
+      if (done) {
+        try { global._cultFieldSchedLastFetchAt = 0; } catch (eReset) {}
+      }
       if (done && global.PassionMapCultivationHistory && typeof global.PassionMapCultivationHistory.requestSync === 'function') {
         try { global.PassionMapCultivationHistory.requestSync({ reason: 'record' }); } catch (eSync) {}
       }
@@ -14534,7 +14984,7 @@
         restSelectAll_(
           'org_masters',
           'org_id=eq.' + encodeURIComponent(orgId) +
-          '&master_type=in.(' + CULT_SETTING_TYPE_ + ',' + CULT_RECORD_TYPE_ + ',crop,work,department)' +
+          '&master_type=in.(' + CULT_SETTING_TYPE_ + ',' + CULT_RECORD_TYPE_ + ',crop,work,department,fertilizer,pesticide)' +
           '&is_active=eq.true&order=sort_order.asc,created_at.asc'
         ),
         restFetch(
@@ -14560,6 +15010,8 @@
       var crops = [];
       var works = [];
       var departments = [];
+      var fertilizers = [];
+      var pesticides = [];
       var seenCrop = {};
       var seenWork = {};
       masterRows.forEach(function (m) {
@@ -14576,8 +15028,37 @@
           works.push({ name: m.name, category: String(d.category || ''), dept: String(d.department || d.dept || '') });
         } else if (m.master_type === 'department' && m.name) {
           departments.push(m.name);
+        } else if (m.master_type === 'fertilizer' && m.name) {
+          fertilizers.push({
+            id: String(d.id || m.legacy_id || m.id),
+            name: String(d.name || m.name),
+            fertilizerType: String(d.fertilizerType || d.type || ''),
+            nitrogen: d.nitrogen != null ? String(d.nitrogen) : (d.n != null ? String(d.n) : ''),
+            phosphate: d.phosphate != null ? String(d.phosphate) : (d.p != null ? String(d.p) : ''),
+            potash: d.potash != null ? String(d.potash) : (d.k != null ? String(d.k) : ''),
+            components: String(d.components || ''),
+            volume: String(d.volume || ''),
+            manufacturer: String(d.manufacturer || ''),
+            regNumber: String(d.regNumber || ''),
+            note: String(d.note || '')
+          });
+        } else if (m.master_type === 'pesticide' && m.name) {
+          pesticides.push({
+            id: String(d.id || m.legacy_id || m.id),
+            name: String(d.name || m.name),
+            activeIngredient: String(d.activeIngredient || ''),
+            manufacturer: String(d.manufacturer || d.maker || ''),
+            cropName: String(d.cropName || ''),
+            dilution: String(d.dilution || ''),
+            phiDays: d.phiDays != null ? d.phiDays : '',
+            useTimingText: String(d.useTimingText || ''),
+            regNumber: String(d.regNumber || ''),
+            note: String(d.note || '')
+          });
         }
       });
+      fertilizers.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); });
+      pesticides.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); });
 
       return {
         today: today,
@@ -14600,8 +15081,37 @@
         }).filter(function (r) { return r.recordId && r.key; }),
         crops: crops,
         works: works,
-        departments: departments
+        departments: departments,
+        fertilizers: fertilizers,
+        pesticides: pesticides
       };
+    });
+
+    registerAction('getCultivationFieldSchedules', async function () {
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var fetched = await Promise.all([
+        restSelectAll_('fields', 'org_id=eq.' + encOrg + '&select=id,legacy_id'),
+        restSelectAll_(
+          'org_masters',
+          'org_id=eq.' + encOrg +
+          '&master_type=in.(' + CULT_RECORD_TYPE_ + ',' + CULT_SETTING_TYPE_ + ')' +
+          '&is_active=eq.true&order=sort_order.asc,created_at.asc'
+        ),
+        restSelectAll_(
+          'work_schedules',
+          'org_id=eq.' + encOrg +
+          '&schedule_kind=eq.work&is_completed=eq.false' +
+          '&legacy_id=like.' + encodeURIComponent(CULT_SCHED_PREFIX_ + '*') +
+          '&select=id,legacy_id,field_id,field_name,crop_name,work_name,department,planned_date,due_date,payload' +
+          '&order=planned_date.asc,created_at.asc'
+        )
+      ]);
+      var fieldLegacyByUuid = {};
+      (fetched[0] || []).forEach(function (f) {
+        if (f && f.id) fieldLegacyByUuid[f.id] = f.legacy_id || f.id;
+      });
+      return buildCultivationFieldData_(fetched[1] || [], fetched[2] || [], fieldLegacyByUuid);
     });
 
     registerAction('getCultivationWorkRecords', async function (params) {
@@ -14883,7 +15393,10 @@
             chWindowStart: cultYmd_(d.windowStart),
             chWindowEnd: cultYmd_(d.windowEnd),
             chFieldId: String(rec.fieldId || ''),
-            chVariety: String(rec.variety || '')
+            chVariety: String(rec.variety || ''),
+            chFertilizers: Array.isArray(d.fertilizers) ? d.fertilizers : [],
+            chPesticides: Array.isArray(d.pesticides) ? d.pesticides : [],
+            chMaterialsText: String(d.materialsText || '')
           };
           handled[key] = true;
           var act = activeByKey[key];
@@ -14896,8 +15409,8 @@
               String(act.crop_name || '') !== cropName ||
               String(act.department || '') !== dept ||
               String(act.field_id || '') !== String(fld ? fld.id : '') ||
-              JSON.stringify({ c: ap.chCategory, b: ap.chBasis, m: ap.chMatch, w: ap.chWindowStart, we: String(ap.chWindowEnd || ''), f: ap.chFieldId, v: ap.chVariety }) !==
-              JSON.stringify({ c: extra.chCategory, b: extra.chBasis, m: extra.chMatch, w: extra.chWindowStart, we: extra.chWindowEnd, f: extra.chFieldId, v: extra.chVariety });
+              JSON.stringify({ c: ap.chCategory, b: ap.chBasis, m: ap.chMatch, w: ap.chWindowStart, we: String(ap.chWindowEnd || ''), f: ap.chFieldId, v: ap.chVariety, mt: String(ap.chMaterialsText || '') }) !==
+              JSON.stringify({ c: extra.chCategory, b: extra.chBasis, m: extra.chMatch, w: extra.chWindowStart, we: extra.chWindowEnd, f: extra.chFieldId, v: extra.chVariety, mt: extra.chMaterialsText });
             if (changed) {
               await patchRow(act.id, {
                 planned_date: sYmd,
@@ -15772,6 +16285,1121 @@
   }
 
   registerInventoryHandlers_();
+
+  // ========================================================================
+  // 出荷会計記録（単価マスタ・出荷売上・領収書/人件費経費・メンバー月給）
+  //   既存 public.org_settings (org_id, setting_key, value) を使用
+  //   - shipacc.unit.<id>
+  //   - shipacc.sale.<YYYY-MM>.<id>
+  //   - shipacc.exp.<YYYY-MM>.<id>
+  //   - shipacc.member.salaries
+  // ========================================================================
+  function shipAccNum_(v) {
+    if (v === '' || v == null) return null;
+    var s = String(v)
+      .replace(/[０-９．－]/g, function (c) {
+        if (c === '．') return '.';
+        if (c === '－') return '-';
+        return String.fromCharCode(c.charCodeAt(0) - 0xFEE0);
+      })
+      .replace(/[,，\s]/g, '');
+    if (!s) return null;
+    var n = Number(s);
+    return isFinite(n) ? n : null;
+  }
+
+  function shipAccYmd_(v) {
+    var s = String(v || '').trim().replace(/\//g, '-');
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (!m) return '';
+    return m[1] + '-' + String(Number(m[2])).padStart(2, '0') + '-' + String(Number(m[3])).padStart(2, '0');
+  }
+
+  function shipAccYm_(ymdOrYm) {
+    var s = String(ymdOrYm || '').trim().replace(/\//g, '-');
+    if (s.toUpperCase() === 'ALL') return 'ALL';
+    var m = s.match(/^(\d{4})-(\d{1,2})/);
+    if (!m) return formatJstNowParts_().dateDash.slice(0, 7);
+    return m[1] + '-' + String(Number(m[2])).padStart(2, '0');
+  }
+
+  async function shipAccUploadPhotos_(photos, linkedTable, linkedRecordId) {
+    var list = Array.isArray(photos) ? photos.slice(0, 3) : [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      if (!p) continue;
+      var s = String((typeof p === 'object') ? (p.url || p.dataUrl || '') : p).trim();
+      if (!s) continue;
+      if (/^https?:\/\//i.test(s)) {
+        if (out.indexOf(s) < 0) out.push(s);
+      } else if (s.indexOf('data:image/') === 0) {
+        var up = await uploadToR2(s, {
+          category: 'other',
+          linkedTable: String(linkedTable || 'org_settings'),
+          linkedRecordId: String(linkedRecordId || ''),
+          maxSide: 1400,
+          quality: 0.82
+        });
+        if (up && up.publicUrl && out.indexOf(up.publicUrl) < 0) {
+          out.push(up.publicUrl);
+        }
+      }
+    }
+    return out;
+  }
+
+  async function shipAccUpsertSettings_(orgId, items) {
+    var list = Array.isArray(items) ? items : [items];
+    if (!list.length) return;
+    var payload = list.map(function (it) {
+      return {
+        org_id: orgId,
+        setting_key: String(it.setting_key || ''),
+        value: it.value || {},
+        updated_by: String(it.updated_by || '')
+      };
+    });
+    await restFetch('rest/v1/org_settings?on_conflict=org_id,setting_key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(payload)
+    });
+  }
+
+  async function shipAccDeleteSetting_(orgId, settingKey) {
+    await restFetch(
+      'rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) +
+      '&setting_key=eq.' + encodeURIComponent(String(settingKey || '')),
+      { method: 'DELETE' }
+    );
+  }
+
+  async function shipAccFindByPrefixAndId_(orgId, prefix, id, settingKey) {
+    var sk = String(settingKey || '').trim();
+    if (sk && sk.indexOf(prefix) === 0) {
+      var direct = await restFetch(
+        'rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) +
+        '&setting_key=eq.' + encodeURIComponent(sk) + '&limit=1'
+      );
+      if (Array.isArray(direct) && direct.length) return direct[0];
+    }
+    var cleanId = String(id || '').trim();
+    if (!cleanId) return null;
+    var pattern = prefix + '*.' + cleanId;
+    var rows = await restFetch(
+      'rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) +
+      '&setting_key=like.' + encodeURIComponent(pattern) + '&limit=1'
+    );
+    return (Array.isArray(rows) && rows.length) ? rows[0] : null;
+  }
+
+  function shipAccNormalizeUnitPrice_(v, settingKey) {
+    v = (v && typeof v === 'object') ? v : {};
+    return {
+      id: String(v.id || '').trim(),
+      settingKey: String(settingKey || v.settingKey || '').trim(),
+      itemName: String(v.itemName || '').trim(),
+      cropName: String(v.cropName || '').trim(),
+      destination: String(v.destination || '').trim(),
+      unitLabel: String(v.unitLabel || '個').trim() || '個',
+      unitPrice: Number(v.unitPrice) || 0,
+      taxMode: v.taxMode === 'tax_excluded' ? 'tax_excluded' : 'tax_included',
+      sortOrder: Number(v.sortOrder) || 0,
+      note: String(v.note || '').trim(),
+      isActive: v.isActive !== false,
+      createdAt: String(v.createdAt || ''),
+      updatedAt: String(v.updatedAt || ''),
+      updatedBy: String(v.updatedBy || '')
+    };
+  }
+
+  function shipAccNormalizeSale_(v, settingKey) {
+    v = (v && typeof v === 'object') ? v : {};
+    return {
+      id: String(v.id || '').trim(),
+      settingKey: String(settingKey || v.settingKey || '').trim(),
+      saleDate: shipAccYmd_(v.saleDate),
+      slipNo: String(v.slipNo || '').trim(),
+      destination: String(v.destination || '').trim(),
+      unitPriceId: String(v.unitPriceId || '').trim(),
+      itemName: String(v.itemName || '').trim(),
+      cropName: String(v.cropName || '').trim(),
+      unitLabel: String(v.unitLabel || '個').trim() || '個',
+      unitPrice: Number(v.unitPrice) || 0,
+      quantity: Number(v.quantity) || 0,
+      totalAmount: Number(v.totalAmount) || 0,
+      slipPhotos: Array.isArray(v.slipPhotos) ? v.slipPhotos.filter(Boolean) : [],
+      note: String(v.note || '').trim(),
+      recordedBy: String(v.recordedBy || '').trim(),
+      createdAt: String(v.createdAt || ''),
+      updatedAt: String(v.updatedAt || '')
+    };
+  }
+
+  function shipAccNormalizeExpense_(v, settingKey) {
+    v = (v && typeof v === 'object') ? v : {};
+    var kind = String(v.expenseKind || 'receipt').trim();
+    if (kind !== 'receipt' && kind !== 'labor' && kind !== 'other') kind = 'receipt';
+    return {
+      id: String(v.id || '').trim(),
+      settingKey: String(settingKey || v.settingKey || '').trim(),
+      expenseDate: shipAccYmd_(v.expenseDate),
+      expenseKind: kind,
+      category: String(v.category || (kind === 'labor' ? '人件費' : '資材・消耗品')).trim(),
+      title: String(v.title || '').trim(),
+      vendorName: String(v.vendorName || '').trim(),
+      amount: Number(v.amount) || 0,
+      receiptPhotos: Array.isArray(v.receiptPhotos) ? v.receiptPhotos.filter(Boolean) : [],
+      memberId: String(v.memberId || '').trim(),
+      memberName: String(v.memberName || '').trim(),
+      monthlySalary: v.monthlySalary != null && v.monthlySalary !== '' ? Number(v.monthlySalary) : null,
+      workDays: v.workDays != null && v.workDays !== '' ? Number(v.workDays) : null,
+      note: String(v.note || '').trim(),
+      recordedBy: String(v.recordedBy || '').trim(),
+      createdAt: String(v.createdAt || ''),
+      updatedAt: String(v.updatedAt || '')
+    };
+  }
+
+  function registerShippingAccountingHandlers_() {
+    registerAction('shipAcc_getBundle', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var ym = shipAccYm_(params.ym);
+      var saleLike = ym === 'ALL' ? 'shipacc.sale.*' : ('shipacc.sale.' + ym + '.*');
+      var expLike = ym === 'ALL' ? 'shipacc.exp.*' : ('shipacc.exp.' + ym + '.*');
+
+      var fetched = await Promise.all([
+        restSelectAll_('org_settings', 'org_id=eq.' + encOrg + '&setting_key=like.' + encodeURIComponent('shipacc.unit.*') + '&select=setting_key,value'),
+        restSelectAll_('org_settings', 'org_id=eq.' + encOrg + '&setting_key=like.' + encodeURIComponent(saleLike) + '&select=setting_key,value'),
+        restSelectAll_('org_settings', 'org_id=eq.' + encOrg + '&setting_key=like.' + encodeURIComponent(expLike) + '&select=setting_key,value'),
+        restFetch('rest/v1/org_settings?org_id=eq.' + encOrg + '&setting_key=eq.' + encodeURIComponent('shipacc.member.salaries') + '&select=value&limit=1').catch(function () { return []; }),
+        restSelectAll_('org_members', 'org_id=eq.' + encOrg + '&is_active=eq.true&select=id,login_id,display_name,department,location,role'),
+        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=in.(crop,delivery_destination)&is_active=eq.true&select=master_type,name,data&order=sort_order.asc')
+      ]);
+
+      var unitPrices = (fetched[0] || [])
+        .map(function (r) { return shipAccNormalizeUnitPrice_(r.value, r.setting_key); })
+        .filter(function (u) { return u.id && u.itemName && u.isActive !== false; })
+        .sort(function (a, b) {
+          if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+          return a.itemName.localeCompare(b.itemName, 'ja');
+        });
+
+      var sales = (fetched[1] || [])
+        .map(function (r) { return shipAccNormalizeSale_(r.value, r.setting_key); })
+        .filter(function (s) { return s.id && s.saleDate; })
+        .sort(function (a, b) {
+          if (a.saleDate !== b.saleDate) return a.saleDate < b.saleDate ? 1 : -1;
+          return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+        });
+
+      var expenses = (fetched[2] || [])
+        .map(function (r) { return shipAccNormalizeExpense_(r.value, r.setting_key); })
+        .filter(function (e) { return e.id && e.expenseDate; })
+        .sort(function (a, b) {
+          if (a.expenseDate !== b.expenseDate) return a.expenseDate < b.expenseDate ? 1 : -1;
+          return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+        });
+
+      var salRow = (Array.isArray(fetched[3]) && fetched[3].length && fetched[3][0].value) ? fetched[3][0].value : {};
+      var memberSalaries = Array.isArray(salRow.salaries) ? salRow.salaries : [];
+
+      var members = (fetched[4] || []).map(function (m) {
+        return {
+          id: String(m.id || ''),
+          loginId: String(m.login_id || ''),
+          name: String(m.display_name || m.login_id || '').trim(),
+          department: String(m.department || '').trim(),
+          location: String(m.location || '').trim(),
+          role: String(m.role || '').trim()
+        };
+      }).filter(function (m) { return m.name; });
+
+      var crops = [];
+      var seenCrop = {};
+      var destinations = [];
+      var seenDest = {};
+      (fetched[5] || []).forEach(function (m) {
+        if (m.master_type === 'crop') {
+          var cn = String(m.name || '').trim();
+          if (cn && !seenCrop[cn]) {
+            seenCrop[cn] = true;
+            crops.push(cn);
+          }
+        } else if (m.master_type === 'delivery_destination') {
+          var dn = String((m.data && m.data.name) || m.name || '').trim();
+          if (dn && !seenDest[dn]) {
+            seenDest[dn] = true;
+            destinations.push(dn);
+          }
+        }
+      });
+
+      return {
+        ym: ym,
+        today: formatJstNowParts_().dateDash,
+        unitPrices: unitPrices,
+        sales: sales,
+        expenses: expenses,
+        memberSalaries: memberSalaries,
+        members: members,
+        crops: crops,
+        destinations: destinations
+      };
+    });
+
+    registerAction('shipAcc_saveUnitPrice', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var src = (params.item && typeof params.item === 'object') ? params.item : {};
+      var itemName = String(src.itemName || '').trim().slice(0, 100);
+      if (!itemName) throw new Error('品目・商品名を入力してください');
+      var unitPrice = shipAccNum_(src.unitPrice);
+      if (unitPrice == null || unitPrice < 0) throw new Error('単価を0以上の数値で入力してください');
+
+      var nowIso = new Date().toISOString();
+      var id = String(src.id || '').trim() || ('su-' + genUuid_());
+      var settingKey = 'shipacc.unit.' + id;
+      var value = {
+        id: id,
+        settingKey: settingKey,
+        itemName: itemName,
+        cropName: String(src.cropName || '').trim().slice(0, 80),
+        destination: String(src.destination || '').trim().slice(0, 80),
+        unitLabel: String(src.unitLabel || '個').trim().slice(0, 20) || '個',
+        unitPrice: Math.round(unitPrice * 100) / 100,
+        taxMode: src.taxMode === 'tax_excluded' ? 'tax_excluded' : 'tax_included',
+        sortOrder: Number(src.sortOrder) || 0,
+        note: String(src.note || '').trim().slice(0, 200),
+        isActive: true,
+        createdAt: String(src.createdAt || nowIso),
+        updatedAt: nowIso,
+        updatedBy: userName
+      };
+
+      await shipAccUpsertSettings_(orgId, {
+        setting_key: settingKey,
+        value: value,
+        updated_by: userName
+      });
+      await invWriteAudit_(orgId, userName, src.id ? '出荷単価編集' : '出荷単価登録', itemName, value.unitPrice + '円/' + value.unitLabel);
+      return { success: true, item: shipAccNormalizeUnitPrice_(value, settingKey) };
+    });
+
+    registerAction('shipAcc_deleteUnitPrice', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var id = String(params.id || '').trim();
+      if (!id) throw new Error('削除する単価IDが指定されていません');
+      var settingKey = 'shipacc.unit.' + id;
+      await shipAccDeleteSetting_(orgId, settingKey);
+      await invWriteAudit_(orgId, params.userName, '出荷単価削除', id, '');
+      return { success: true, id: id };
+    });
+
+    registerAction('shipAcc_recordSalesBatch', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var saleDate = shipAccYmd_(params.saleDate);
+      if (!saleDate) throw new Error('出荷日を選択してください');
+      var ym = saleDate.slice(0, 7);
+      var slipNo = String(params.slipNo || '').trim().slice(0, 60);
+      var destination = String(params.destination || '').trim().slice(0, 80);
+      var commonNote = String(params.note || '').trim().slice(0, 300);
+
+      var rawLines = Array.isArray(params.lines) ? params.lines : [];
+      var validLines = [];
+      for (var i = 0; i < rawLines.length; i++) {
+        var l = rawLines[i] || {};
+        var qty = shipAccNum_(l.quantity);
+        if (qty == null || qty <= 0) continue;
+        var itemName = String(l.itemName || '').trim().slice(0, 100);
+        var price = shipAccNum_(l.unitPrice);
+        if (!itemName) throw new Error('品目名が空の行があります');
+        if (price == null || price < 0) throw new Error('「' + itemName + '」の単価が不正です');
+        validLines.push({
+          unitPriceId: String(l.unitPriceId || '').trim(),
+          itemName: itemName,
+          cropName: String(l.cropName || '').trim().slice(0, 80),
+          destination: String(l.destination || destination || '').trim().slice(0, 80),
+          unitLabel: String(l.unitLabel || '個').trim().slice(0, 20) || '個',
+          unitPrice: Math.round(price * 100) / 100,
+          quantity: Math.round(qty * 1000) / 1000,
+          note: String(l.note || commonNote || '').trim().slice(0, 300),
+          saveToMaster: !!l.saveToMaster
+        });
+      }
+      if (!validLines.length) {
+        throw new Error('個数が1以上の品目を入力してください');
+      }
+
+      var slipPhotos = await shipAccUploadPhotos_(params.photos, 'shipping_sales', saleDate);
+      var nowIso = new Date().toISOString();
+      var upsertRows = [];
+      var createdUnitPrices = [];
+      var createdSales = [];
+
+      validLines.forEach(function (ln) {
+        var unitId = ln.unitPriceId;
+        if (ln.saveToMaster && !unitId) {
+          unitId = 'su-' + genUuid_();
+          var unitKey = 'shipacc.unit.' + unitId;
+          var unitVal = {
+            id: unitId,
+            settingKey: unitKey,
+            itemName: ln.itemName,
+            cropName: ln.cropName,
+            destination: ln.destination,
+            unitLabel: ln.unitLabel,
+            unitPrice: ln.unitPrice,
+            taxMode: 'tax_included',
+            sortOrder: 0,
+            note: '',
+            isActive: true,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+            updatedBy: userName
+          };
+          upsertRows.push({ setting_key: unitKey, value: unitVal, updated_by: userName });
+          createdUnitPrices.push(shipAccNormalizeUnitPrice_(unitVal, unitKey));
+        }
+
+        var saleId = 'ss-' + genUuid_();
+        var saleKey = 'shipacc.sale.' + ym + '.' + saleId;
+        var totalAmount = Math.round(ln.unitPrice * ln.quantity);
+        var saleVal = {
+          id: saleId,
+          settingKey: saleKey,
+          saleDate: saleDate,
+          slipNo: slipNo,
+          destination: ln.destination,
+          unitPriceId: unitId,
+          itemName: ln.itemName,
+          cropName: ln.cropName,
+          unitLabel: ln.unitLabel,
+          unitPrice: ln.unitPrice,
+          quantity: ln.quantity,
+          totalAmount: totalAmount,
+          slipPhotos: slipPhotos,
+          note: ln.note,
+          recordedBy: userName,
+          createdAt: nowIso,
+          updatedAt: nowIso
+        };
+        upsertRows.push({ setting_key: saleKey, value: saleVal, updated_by: userName });
+        createdSales.push(shipAccNormalizeSale_(saleVal, saleKey));
+      });
+
+      await shipAccUpsertSettings_(orgId, upsertRows);
+      var grandTotal = createdSales.reduce(function (acc, s) { return acc + s.totalAmount; }, 0);
+      await invWriteAudit_(orgId, userName, '出荷売上記録', saleDate + '（' + createdSales.length + '件）', '合計 ' + grandTotal + '円');
+      return { success: true, sales: createdSales, createdUnitPrices: createdUnitPrices };
+    });
+
+    registerAction('shipAcc_updateSale', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var id = String(params.id || '').trim();
+      var existingRow = await shipAccFindByPrefixAndId_(orgId, 'shipacc.sale.', id, params.settingKey);
+      if (!existingRow) throw new Error('対象の売上記録が見つかりません');
+
+      var prev = shipAccNormalizeSale_(existingRow.value, existingRow.setting_key);
+      var src = (params.sale && typeof params.sale === 'object') ? params.sale : {};
+      var saleDate = shipAccYmd_(src.saleDate || prev.saleDate);
+      if (!saleDate) throw new Error('出荷日を入力してください');
+      var itemName = String(src.itemName != null ? src.itemName : prev.itemName).trim().slice(0, 100);
+      if (!itemName) throw new Error('品目名を入力してください');
+      var unitPrice = shipAccNum_(src.unitPrice != null ? src.unitPrice : prev.unitPrice);
+      var quantity = shipAccNum_(src.quantity != null ? src.quantity : prev.quantity);
+      if (unitPrice == null || unitPrice < 0) throw new Error('単価が不正です');
+      if (quantity == null || quantity <= 0) throw new Error('個数は0より大きい数値にしてください');
+
+      var photos = Array.isArray(params.photos)
+        ? await shipAccUploadPhotos_(params.photos, 'shipping_sales', prev.id)
+        : prev.slipPhotos;
+
+      var newYm = saleDate.slice(0, 7);
+      var newKey = 'shipacc.sale.' + newYm + '.' + prev.id;
+      var nowIso = new Date().toISOString();
+      var nextVal = {
+        id: prev.id,
+        settingKey: newKey,
+        saleDate: saleDate,
+        slipNo: String(src.slipNo != null ? src.slipNo : prev.slipNo).trim().slice(0, 60),
+        destination: String(src.destination != null ? src.destination : prev.destination).trim().slice(0, 80),
+        unitPriceId: String(src.unitPriceId != null ? src.unitPriceId : prev.unitPriceId).trim(),
+        itemName: itemName,
+        cropName: String(src.cropName != null ? src.cropName : prev.cropName).trim().slice(0, 80),
+        unitLabel: String(src.unitLabel != null ? src.unitLabel : prev.unitLabel).trim().slice(0, 20) || '個',
+        unitPrice: Math.round(unitPrice * 100) / 100,
+        quantity: Math.round(quantity * 1000) / 1000,
+        totalAmount: Math.round(unitPrice * quantity),
+        slipPhotos: photos,
+        note: String(src.note != null ? src.note : prev.note).trim().slice(0, 300),
+        recordedBy: prev.recordedBy || userName,
+        createdAt: prev.createdAt || nowIso,
+        updatedAt: nowIso
+      };
+
+      await shipAccUpsertSettings_(orgId, { setting_key: newKey, value: nextVal, updated_by: userName });
+      if (existingRow.setting_key !== newKey) {
+        await shipAccDeleteSetting_(orgId, existingRow.setting_key);
+      }
+      await invWriteAudit_(orgId, userName, '出荷売上編集', itemName, saleDate + ' ' + nextVal.totalAmount + '円');
+      return { success: true, sale: shipAccNormalizeSale_(nextVal, newKey) };
+    });
+
+    registerAction('shipAcc_deleteSale', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var id = String(params.id || '').trim();
+      var existingRow = await shipAccFindByPrefixAndId_(orgId, 'shipacc.sale.', id, params.settingKey);
+      if (!existingRow) return { success: true, id: id };
+      await shipAccDeleteSetting_(orgId, existingRow.setting_key);
+      var prev = shipAccNormalizeSale_(existingRow.value, existingRow.setting_key);
+      await invWriteAudit_(orgId, params.userName, '出荷売上削除', prev.itemName || id, prev.saleDate + ' ' + prev.totalAmount + '円');
+      return { success: true, id: prev.id || id };
+    });
+
+    registerAction('shipAcc_saveExpense', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var src = (params.expense && typeof params.expense === 'object') ? params.expense : {};
+      var id = String(src.id || '').trim();
+      var existingRow = id ? await shipAccFindByPrefixAndId_(orgId, 'shipacc.exp.', id, src.settingKey) : null;
+      var prev = existingRow ? shipAccNormalizeExpense_(existingRow.value, existingRow.setting_key) : null;
+
+      var expenseDate = shipAccYmd_(src.expenseDate || (prev && prev.expenseDate));
+      if (!expenseDate) throw new Error('日付を選択してください');
+      var kind = String(src.expenseKind || (prev && prev.expenseKind) || 'receipt').trim();
+      if (kind !== 'receipt' && kind !== 'labor' && kind !== 'other') kind = 'receipt';
+
+      var monthlySalary = shipAccNum_(src.monthlySalary != null ? src.monthlySalary : (prev && prev.monthlySalary));
+      var workDays = shipAccNum_(src.workDays != null ? src.workDays : (prev && prev.workDays));
+      var amount = shipAccNum_(src.amount);
+      if (kind === 'labor' && amount == null && monthlySalary != null && workDays != null) {
+        amount = Math.round((monthlySalary / 30) * workDays);
+      }
+      if (amount == null || amount < 0) throw new Error('金額を0以上の数値で入力してください');
+
+      var finalId = (prev && prev.id) || id || ('se-' + genUuid_());
+      var photos = Array.isArray(params.photos)
+        ? await shipAccUploadPhotos_(params.photos, 'accounting_expenses', finalId)
+        : (prev ? prev.receiptPhotos : []);
+
+      var category = String(src.category != null ? src.category : (prev ? prev.category : (kind === 'labor' ? '人件費' : '資材・消耗品'))).trim().slice(0, 40) || 'その他';
+      var memberName = String(src.memberName != null ? src.memberName : (prev ? prev.memberName : '')).trim().slice(0, 60);
+      var title = String(src.title != null ? src.title : (prev ? prev.title : '')).trim().slice(0, 120);
+      if (!title) {
+        title = kind === 'labor' && memberName
+          ? (memberName + ' 人件費' + (workDays != null ? ('（' + workDays + '日）') : ''))
+          : (String(src.vendorName || '').trim() || category);
+      }
+
+      var newYm = expenseDate.slice(0, 7);
+      var newKey = 'shipacc.exp.' + newYm + '.' + finalId;
+      var nowIso = new Date().toISOString();
+      var val = {
+        id: finalId,
+        settingKey: newKey,
+        expenseDate: expenseDate,
+        expenseKind: kind,
+        category: category,
+        title: title,
+        vendorName: String(src.vendorName != null ? src.vendorName : (prev ? prev.vendorName : '')).trim().slice(0, 80),
+        amount: Math.round(amount),
+        receiptPhotos: photos,
+        memberId: String(src.memberId != null ? src.memberId : (prev ? prev.memberId : '')).trim(),
+        memberName: memberName,
+        monthlySalary: monthlySalary,
+        workDays: workDays,
+        note: String(src.note != null ? src.note : (prev ? prev.note : '')).trim().slice(0, 300),
+        recordedBy: (prev && prev.recordedBy) || userName,
+        createdAt: (prev && prev.createdAt) || nowIso,
+        updatedAt: nowIso
+      };
+
+      await shipAccUpsertSettings_(orgId, { setting_key: newKey, value: val, updated_by: userName });
+      if (existingRow && existingRow.setting_key !== newKey) {
+        await shipAccDeleteSetting_(orgId, existingRow.setting_key);
+      }
+      await invWriteAudit_(orgId, userName, prev ? '経費編集' : '経費記録', title, expenseDate + ' ' + val.amount + '円');
+      return { success: true, expense: shipAccNormalizeExpense_(val, newKey) };
+    });
+
+    registerAction('shipAcc_recordLaborBatch', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var expenseDate = shipAccYmd_(params.expenseDate);
+      if (!expenseDate) throw new Error('日付を選択してください');
+      var ym = expenseDate.slice(0, 7);
+      var commonNote = String(params.note || '').trim().slice(0, 300);
+
+      var rawEntries = Array.isArray(params.entries) ? params.entries : [];
+      var nowIso = new Date().toISOString();
+      var upsertRows = [];
+      var createdExpenses = [];
+
+      rawEntries.forEach(function (ent) {
+        if (!ent) return;
+        var memberName = String(ent.memberName || '').trim().slice(0, 60);
+        var monthlySalary = shipAccNum_(ent.monthlySalary);
+        var workDays = shipAccNum_(ent.workDays);
+        if (!memberName || monthlySalary == null || monthlySalary <= 0 || workDays == null || workDays <= 0) return;
+
+        var amount = Math.round((monthlySalary / 30) * workDays);
+        var expId = 'se-' + genUuid_();
+        var expKey = 'shipacc.exp.' + ym + '.' + expId;
+        var val = {
+          id: expId,
+          settingKey: expKey,
+          expenseDate: expenseDate,
+          expenseKind: 'labor',
+          category: '人件費',
+          title: memberName + ' 人件費（' + workDays + '日）',
+          vendorName: '',
+          amount: amount,
+          receiptPhotos: [],
+          memberId: String(ent.memberId || '').trim(),
+          memberName: memberName,
+          monthlySalary: Math.round(monthlySalary),
+          workDays: Math.round(workDays * 100) / 100,
+          note: String(ent.note || commonNote || '').trim().slice(0, 300),
+          recordedBy: userName,
+          createdAt: nowIso,
+          updatedAt: nowIso
+        };
+        upsertRows.push({ setting_key: expKey, value: val, updated_by: userName });
+        createdExpenses.push(shipAccNormalizeExpense_(val, expKey));
+      });
+
+      if (!upsertRows.length) {
+        throw new Error('月給と日数が設定されたメンバーを1名以上選択してください');
+      }
+
+      await shipAccUpsertSettings_(orgId, upsertRows);
+      var total = createdExpenses.reduce(function (acc, e) { return acc + e.amount; }, 0);
+      await invWriteAudit_(orgId, userName, '人件費記録', expenseDate + '（' + createdExpenses.length + '名）', '合計 ' + total + '円');
+      return { success: true, expenses: createdExpenses };
+    });
+
+    registerAction('shipAcc_deleteExpense', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var id = String(params.id || '').trim();
+      var existingRow = await shipAccFindByPrefixAndId_(orgId, 'shipacc.exp.', id, params.settingKey);
+      if (!existingRow) return { success: true, id: id };
+      await shipAccDeleteSetting_(orgId, existingRow.setting_key);
+      var prev = shipAccNormalizeExpense_(existingRow.value, existingRow.setting_key);
+      await invWriteAudit_(orgId, params.userName, '経費削除', prev.title || id, prev.expenseDate + ' ' + prev.amount + '円');
+      return { success: true, id: prev.id || id };
+    });
+
+    registerAction('shipAcc_saveMemberSalaries', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var raw = Array.isArray(params.salaries) ? params.salaries : [];
+      var nowIso = new Date().toISOString();
+      var cleaned = [];
+      var seen = {};
+
+      raw.forEach(function (s) {
+        if (!s || s.deleted) return;
+        var memberId = String(s.memberId || '').trim();
+        var memberName = String(s.memberName || '').trim().slice(0, 60);
+        if (!memberName) return;
+        var salary = shipAccNum_(s.monthlySalary);
+        if (salary == null || salary < 0) salary = 0;
+        var dedupeKey = memberId ? ('id:' + memberId) : ('name:' + memberName);
+        if (seen[dedupeKey]) return;
+        seen[dedupeKey] = true;
+        cleaned.push({
+          id: String(s.id || '').trim() || ('sms-' + genUuid_()),
+          memberId: memberId,
+          memberName: memberName,
+          monthlySalary: Math.round(salary),
+          note: String(s.note || '').trim().slice(0, 120),
+          updatedAt: nowIso
+        });
+      });
+
+      await shipAccUpsertSettings_(orgId, {
+        setting_key: 'shipacc.member.salaries',
+        value: { salaries: cleaned, updatedAt: nowIso, updatedBy: userName },
+        updated_by: userName
+      });
+      await invWriteAudit_(orgId, userName, 'メンバー月給設定保存', cleaned.length + '名', '');
+      return { success: true, salaries: cleaned };
+    });
+
+    registerAction('shipAcc_getAttendanceForDate', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var date = shipAccYmd_(params.date) || formatJstNowParts_().dateDash;
+      var rows = await restSelectAll_(
+        'attendance_records',
+        'org_id=eq.' + encodeURIComponent(orgId) +
+        '&work_date=eq.' + encodeURIComponent(date) +
+        '&record_kind=eq.clock&select=member_id,user_name'
+      );
+      var seen = {};
+      var members = [];
+      (rows || []).forEach(function (r) {
+        var mid = String(r.member_id || '').trim();
+        var uname = String(r.user_name || '').trim();
+        var key = mid || uname;
+        if (!key || seen[key]) return;
+        seen[key] = true;
+        members.push({ memberId: mid, userName: uname });
+      });
+      return { success: true, date: date, members: members };
+    });
+  }
+
+  registerShippingAccountingHandlers_();
+
+  // ========================================================================
+  // 出荷マスタ機能（値段規格・ラベルコード・休み店舗・容量・個数ルール・軽トラ・店舗記録・値段記録表）
+  //   既存 public.org_settings (org_id, setting_key, value) を使用
+  //   - shipmst.config
+  //   - shipmst.holidays
+  //   - shipmst.plan.<YYYY-MM-DD>
+  //   - shipmst.pricerecord.<YYYY-MM-DD>
+  // ========================================================================
+  function shipMstSafeYmdList_(dates) {
+    var out = [];
+    var seen = {};
+    (Array.isArray(dates) ? dates : []).forEach(function (d) {
+      var ymd = shipAccYmd_(d);
+      if (ymd && !seen[ymd]) {
+        seen[ymd] = true;
+        out.push(ymd);
+      }
+    });
+    return out;
+  }
+
+  function registerShippingMasterHandlers_() {
+    registerAction('shipMst_getBundle', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+      var baseDate = shipAccYmd_(params.date) || formatJstNowParts_().dateDash;
+      var targetDates = shipMstSafeYmdList_(params.dates);
+      if (!targetDates.length) {
+        targetDates = [baseDate];
+      }
+
+      var fetched = await Promise.all([
+        restFetch('rest/v1/org_settings?org_id=eq.' + encOrg + '&setting_key=eq.' + encodeURIComponent('shipmst.config') + '&select=setting_key,value&limit=1').catch(function () { return []; }),
+        restFetch('rest/v1/org_settings?org_id=eq.' + encOrg + '&setting_key=eq.' + encodeURIComponent('shipmst.holidays') + '&select=setting_key,value&limit=1').catch(function () { return []; }),
+        restSelectAll_('org_settings', 'org_id=eq.' + encOrg + '&setting_key=like.' + encodeURIComponent('shipmst.plan.*') + '&select=setting_key,value').catch(function () { return []; }),
+        restSelectAll_('org_settings', 'org_id=eq.' + encOrg + '&setting_key=like.' + encodeURIComponent('shipmst.pricerecord.*') + '&select=setting_key,value').catch(function () { return []; }),
+        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=in.(crop,delivery_destination)&is_active=eq.true&select=master_type,name,data&order=sort_order.asc').catch(function () { return []; })
+      ]);
+
+      var configRow = (Array.isArray(fetched[0]) && fetched[0].length && fetched[0][0].value) ? fetched[0][0].value : null;
+      var holidayRow = (Array.isArray(fetched[1]) && fetched[1].length && fetched[1][0].value) ? fetched[1][0].value : null;
+
+      var plansByDate = {};
+      (fetched[2] || []).forEach(function (r) {
+        var sk = String(r.setting_key || '');
+        var d = sk.replace(/^shipmst\.plan\./, '');
+        if (d && r.value && typeof r.value === 'object') {
+          plansByDate[d] = r.value;
+        }
+      });
+
+      var priceRecordsByDate = {};
+      (fetched[3] || []).forEach(function (r) {
+        var sk = String(r.setting_key || '');
+        var d = sk.replace(/^shipmst\.pricerecord\./, '');
+        if (d && r.value && typeof r.value === 'object') {
+          priceRecordsByDate[d] = r.value;
+        }
+      });
+
+      var crops = [];
+      var seenCrop = {};
+      var destinations = [];
+      var seenDest = {};
+      (fetched[4] || []).forEach(function (m) {
+        if (m.master_type === 'crop') {
+          var cn = String(m.name || '').trim();
+          if (cn && !seenCrop[cn]) {
+            seenCrop[cn] = true;
+            crops.push(cn);
+          }
+        } else if (m.master_type === 'delivery_destination') {
+          var dn = String((m.data && m.data.name) || m.name || '').trim();
+          if (dn && !seenDest[dn]) {
+            seenDest[dn] = true;
+            destinations.push(dn);
+          }
+        }
+      });
+
+      return {
+        today: formatJstNowParts_().dateDash,
+        baseDate: baseDate,
+        config: configRow,
+        holidays: (holidayRow && typeof holidayRow === 'object' && holidayRow.dates && typeof holidayRow.dates === 'object') ? holidayRow : { dates: {} },
+        plansByDate: plansByDate,
+        priceRecordsByDate: priceRecordsByDate,
+        crops: crops,
+        destinations: destinations
+      };
+    });
+
+    registerAction('shipMst_saveConfig', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var cfg = (params.config && typeof params.config === 'object') ? params.config : {};
+      var nowIso = new Date().toISOString();
+      var value = Object.assign({}, cfg, {
+        updatedAt: nowIso,
+        updatedBy: userName
+      });
+      await shipAccUpsertSettings_(orgId, {
+        setting_key: 'shipmst.config',
+        value: value,
+        updated_by: userName
+      });
+      var storeCount = Array.isArray(value.stores) ? value.stores.length : 0;
+      var priceCount = Array.isArray(value.prices) ? value.prices.length : 0;
+      await invWriteAudit_(orgId, userName, '出荷マスタ設定保存', '店舗' + storeCount + '件 / 単価規格' + priceCount + '件', '');
+      return { success: true, config: value };
+    });
+
+    registerAction('shipMst_saveHolidays', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var incomingDates = (params.dates && typeof params.dates === 'object') ? params.dates : {};
+      var mergeMode = params.replace !== true;
+      var baseDates = {};
+      if (mergeMode) {
+        var existing = await restFetch(
+          'rest/v1/org_settings?org_id=eq.' + encodeURIComponent(orgId) +
+          '&setting_key=eq.' + encodeURIComponent('shipmst.holidays') + '&select=value&limit=1'
+        ).catch(function () { return []; });
+        if (Array.isArray(existing) && existing.length && existing[0].value && typeof existing[0].value.dates === 'object') {
+          baseDates = Object.assign({}, existing[0].value.dates);
+        }
+      }
+      Object.keys(incomingDates).forEach(function (k) {
+        var ymd = shipAccYmd_(k);
+        if (!ymd) return;
+        var list = Array.isArray(incomingDates[k]) ? incomingDates[k].map(function (x) { return String(x || '').trim(); }).filter(Boolean) : [];
+        if (list.length) {
+          baseDates[ymd] = list;
+        } else {
+          delete baseDates[ymd];
+        }
+      });
+      var nowIso = new Date().toISOString();
+      var value = {
+        dates: baseDates,
+        updatedAt: nowIso,
+        updatedBy: userName
+      };
+      await shipAccUpsertSettings_(orgId, {
+        setting_key: 'shipmst.holidays',
+        value: value,
+        updated_by: userName
+      });
+      await invWriteAudit_(orgId, userName, '休み店舗設定保存', Object.keys(incomingDates).length + '日分', '');
+      return { success: true, holidays: value };
+    });
+
+    registerAction('shipMst_savePlan', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var shipDate = shipAccYmd_(params.shipDate);
+      if (!shipDate) throw new Error('出荷日（YYYY-MM-DD）が不正です');
+      var plan = (params.plan && typeof params.plan === 'object') ? params.plan : {};
+      var nowIso = new Date().toISOString();
+      var value = Object.assign({}, plan, {
+        shipDate: shipDate,
+        updatedAt: nowIso,
+        updatedBy: userName
+      });
+      await shipAccUpsertSettings_(orgId, {
+        setting_key: 'shipmst.plan.' + shipDate,
+        value: value,
+        updated_by: userName
+      });
+      await invWriteAudit_(orgId, userName, '出荷店舗記録保存', shipDate, '');
+      return { success: true, shipDate: shipDate, plan: value };
+    });
+
+    registerAction('shipMst_savePlansBatch', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var rawList = Array.isArray(params.plans) ? params.plans : [];
+      var nowIso = new Date().toISOString();
+      var items = [];
+      var savedPlans = {};
+      rawList.forEach(function (entry) {
+        if (!entry || typeof entry !== 'object') return;
+        var shipDate = shipAccYmd_(entry.shipDate || (entry.plan && entry.plan.shipDate));
+        if (!shipDate) return;
+        var planObj = (entry.plan && typeof entry.plan === 'object') ? entry.plan : entry;
+        var value = Object.assign({}, planObj, {
+          shipDate: shipDate,
+          updatedAt: nowIso,
+          updatedBy: userName
+        });
+        items.push({
+          setting_key: 'shipmst.plan.' + shipDate,
+          value: value,
+          updated_by: userName
+        });
+        savedPlans[shipDate] = value;
+      });
+      if (!items.length) throw new Error('保存対象の出荷計画がありません');
+      await shipAccUpsertSettings_(orgId, items);
+      await invWriteAudit_(orgId, userName, '出荷店舗記録一括保存', items.length + '日分', '');
+      return { success: true, plansByDate: savedPlans };
+    });
+
+    registerAction('shipMst_savePriceRecord', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var userName = String(params.userName || '').trim();
+      var shipDate = shipAccYmd_(params.shipDate);
+      if (!shipDate) throw new Error('出荷日（YYYY-MM-DD）が不正です');
+      var record = (params.record && typeof params.record === 'object') ? params.record : {};
+      var nowIso = new Date().toISOString();
+      var value = Object.assign({}, record, {
+        shipDate: shipDate,
+        updatedAt: nowIso,
+        updatedBy: userName
+      });
+      await shipAccUpsertSettings_(orgId, {
+        setting_key: 'shipmst.pricerecord.' + shipDate,
+        value: value,
+        updated_by: userName
+      });
+      await invWriteAudit_(orgId, userName, '値段記録表保存', shipDate, '');
+      return { success: true, shipDate: shipDate, record: value };
+    });
+  }
+
+  registerShippingMasterHandlers_();
+
+  // ========================================================================
+  // 写真仕分けボックス（Android Web Share Target 等からの一時保管・仕分け）
+  //   既存 public.org_settings (setting_key = 'photoinbox.item.<id>') + R2
+  // ========================================================================
+  function photoInboxNormalizeItem_(v, settingKey) {
+    v = (v && typeof v === 'object') ? v : {};
+    var id = String(v.id || '').trim();
+    if (!id && settingKey && String(settingKey).indexOf('photoinbox.item.') === 0) {
+      id = String(settingKey).slice('photoinbox.item.'.length);
+    }
+    var status = String(v.status || 'pending').trim();
+    if (status !== 'sorted') status = 'pending';
+    return {
+      id: id,
+      settingKey: String(settingKey || (id ? ('photoinbox.item.' + id) : '')).trim(),
+      url: String(v.url || '').trim(),
+      r2Key: String(v.r2Key || '').trim(),
+      assetId: String(v.assetId || '').trim(),
+      memo: String(v.memo || '').trim(),
+      cropHint: String(v.cropHint || '').trim(),
+      authorName: String(v.authorName || '').trim(),
+      source: String(v.source || 'manual_pick').trim(),
+      status: status,
+      sortedLinks: Array.isArray(v.sortedLinks) ? v.sortedLinks.filter(Boolean) : [],
+      takenAt: String(v.takenAt || '').trim(),
+      createdAt: String(v.createdAt || '').trim(),
+      updatedAt: String(v.updatedAt || '').trim()
+    };
+  }
+
+  function registerPhotoInboxHandlers_() {
+    registerAction('photoInbox_list', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rows = await restSelectAll_(
+        'org_settings',
+        'org_id=eq.' + encodeURIComponent(orgId) +
+        '&setting_key=like.' + encodeURIComponent('photoinbox.item.*')
+      );
+      var allItems = (Array.isArray(rows) ? rows : []).map(function (r) {
+        return photoInboxNormalizeItem_(r && r.value, r && r.setting_key);
+      }).filter(function (it) {
+        return !!it.id && !!it.url;
+      });
+      allItems.sort(function (a, b) {
+        var ta = Date.parse(a.createdAt || a.updatedAt || '') || 0;
+        var tb = Date.parse(b.createdAt || b.updatedAt || '') || 0;
+        return tb - ta;
+      });
+      var pendingCount = 0;
+      var sortedCount = 0;
+      allItems.forEach(function (it) {
+        if (it.status === 'sorted') sortedCount += 1;
+        else pendingCount += 1;
+      });
+      var filterStatus = String(params.status || 'all').trim();
+      var items = (filterStatus === 'pending' || filterStatus === 'sorted')
+        ? allItems.filter(function (it) { return it.status === filterStatus; })
+        : allItems;
+      return {
+        success: true,
+        items: items,
+        pendingCount: pendingCount,
+        sortedCount: sortedCount,
+        totalCount: allItems.length
+      };
+    });
+
+    registerAction('photoInbox_add', async function (params) {
+      params = params || {};
+      var orgId = await resolveCurrentOrgId_();
+      var rawList = Array.isArray(params.items) ? params.items : [];
+      if (!rawList.length) throw new Error('送信する写真がありません');
+
+      var nowIso = new Date().toISOString();
+      var created = [];
+      var upsertBatch = [];
+
+      for (var i = 0; i < rawList.length; i++) {
+        var raw = rawList[i] || {};
+        var id = 'pi_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        var url = String(raw.url || '').trim();
+        var r2Key = String(raw.r2Key || '').trim();
+        var assetId = String(raw.assetId || '').trim();
+        var dataUrl = String(raw.dataUrl || '').trim();
+
+        if (!url && dataUrl && dataUrl.indexOf('data:') === 0) {
+          var up = await uploadToR2(dataUrl, {
+            category: 'other',
+            linkedTable: 'photo_inbox',
+            linkedRecordId: id,
+            maxSide: 1400,
+            quality: 0.84
+          });
+          if (!up || !up.publicUrl) {
+            throw new Error('写真のアップロードに失敗しました');
+          }
+          url = up.publicUrl;
+          r2Key = up.r2Key || '';
+          assetId = up.assetId || '';
+        }
+        if (!url) continue;
+
+        var item = photoInboxNormalizeItem_({
+          id: id,
+          url: url,
+          r2Key: r2Key,
+          assetId: assetId,
+          memo: String(raw.memo || '').trim(),
+          cropHint: String(raw.cropHint || '').trim(),
+          authorName: String(raw.authorName || params.authorName || '').trim(),
+          source: String(raw.source || params.source || 'manual_pick').trim(),
+          status: 'pending',
+          sortedLinks: [],
+          takenAt: String(raw.takenAt || '').trim(),
+          createdAt: nowIso,
+          updatedAt: nowIso
+        }, 'photoinbox.item.' + id);
+
+        created.push(item);
+        upsertBatch.push({
+          setting_key: item.settingKey,
+          value: item,
+          updated_by: item.authorName || ''
+        });
+      }
+
+      if (!upsertBatch.length) throw new Error('有効な写真データがありませんでした');
+      await shipAccUpsertSettings_(orgId, upsertBatch);
+      return { success: true, items: created, count: created.length };
+    });
+
+    registerAction('photoInbox_update', async function (params) {
+      params = params || {};
+      var id = String(params.id || '').trim();
+      if (!id) throw new Error('写真IDが必要です');
+      var orgId = await resolveCurrentOrgId_();
+      var row = await shipAccFindByPrefixAndId_(orgId, 'photoinbox.item.', id, params.settingKey || ('photoinbox.item.' + id));
+      if (!row) throw new Error('対象の写真が見つかりません');
+
+      var cur = photoInboxNormalizeItem_(row.value, row.setting_key);
+      if (params.memo !== undefined) cur.memo = String(params.memo || '').trim();
+      if (params.cropHint !== undefined) cur.cropHint = String(params.cropHint || '').trim();
+      if (params.status === 'pending' || params.status === 'sorted') {
+        cur.status = params.status;
+      }
+
+      if (params.addLink && typeof params.addLink === 'object') {
+        var link = {
+          type: String(params.addLink.type || 'manual'),
+          id: String(params.addLink.id || ''),
+          title: String(params.addLink.title || ''),
+          sortedAt: String(params.addLink.sortedAt || new Date().toISOString())
+        };
+        var links = Array.isArray(cur.sortedLinks) ? cur.sortedLinks.slice() : [];
+        var existIdx = links.findIndex(function (l) {
+          return l && l.type === link.type && l.id === link.id;
+        });
+        if (existIdx >= 0) links[existIdx] = link;
+        else links.push(link);
+        cur.sortedLinks = links;
+        if (params.keepPending !== true) {
+          cur.status = 'sorted';
+        }
+      }
+
+      cur.updatedAt = new Date().toISOString();
+      await shipAccUpsertSettings_(orgId, {
+        setting_key: cur.settingKey,
+        value: cur,
+        updated_by: String(params.userName || cur.authorName || '')
+      });
+      return { success: true, item: cur };
+    });
+
+    registerAction('photoInbox_delete', async function (params) {
+      params = params || {};
+      var id = String(params.id || '').trim();
+      if (!id) throw new Error('写真IDが必要です');
+      var orgId = await resolveCurrentOrgId_();
+      var row = await shipAccFindByPrefixAndId_(orgId, 'photoinbox.item.', id, params.settingKey || ('photoinbox.item.' + id));
+      if (!row) return { success: true, id: id };
+
+      var existing = photoInboxNormalizeItem_(row.value, row.setting_key);
+      await shipAccDeleteSetting_(orgId, row.setting_key);
+
+      var hasLinks = Array.isArray(existing.sortedLinks) && existing.sortedLinks.length > 0;
+      if (params.deleteR2 !== false && !hasLinks && (existing.r2Key || existing.assetId)) {
+        try {
+          await deleteFromR2({
+            r2Key: existing.r2Key || undefined,
+            assetId: existing.assetId || undefined
+          });
+        } catch (e) {}
+      }
+      return { success: true, id: id };
+    });
+  }
+
+  registerPhotoInboxHandlers_();
 
   if (config_.enableAllActions) {
     Object.keys(registeredHandlers_).forEach(function (k) {

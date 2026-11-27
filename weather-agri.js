@@ -1733,26 +1733,129 @@
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
+  function ensureYahooWeatherStyle_() {
+    if (typeof document === 'undefined' || !document.head) return;
+    if (document.getElementById('weatherYahooThemeStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'weatherYahooThemeStyle';
+    style.textContent = [
+      '#weatherModal.yw-modal > div{background:#0e1116!important;color:#f1f5f9!important;width:min(96vw,480px)!important;max-width:480px!important;max-height:92dvh!important;padding:0!important;border-radius:14px!important;border:1px solid #262c36;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,0.68)!important;}',
+      '#weatherModal.yw-modal > div > div:first-child{background:#132136;padding:10px 14px 6px;margin-bottom:0!important;border-bottom:1px solid #1e3250;}',
+      '#weatherModal.yw-modal > div > div:first-child h3{color:#f8fafc!important;font-size:15px;margin:0;letter-spacing:.02em;}',
+      '#weatherModal.yw-modal > div > div:first-child span{color:#cbd5e1!important;font-size:24px;}',
+      '#weatherModal.yw-modal #weatherContent{padding:0!important;background:#0e1116;color:#f1f5f9;-webkit-overflow-scrolling:touch;}',
+      '#weatherModal.yw-modal #weatherContent > div{padding:0!important;}',
+      '.yw-place-bar{display:flex;align-items:stretch;background:#132136;border-bottom:1px solid #1f3352;overflow-x:auto;scrollbar-width:none;}',
+      '.yw-place-bar::-webkit-scrollbar{display:none;}',
+      '.yw-place-tab{flex:1;min-width:96px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px 8px 7px;background:transparent;border:none;border-bottom:3px solid transparent;color:#8ea4c2;cursor:pointer;text-align:center;box-sizing:border-box;}',
+      '.yw-place-tab.is-active{color:#ffffff;border-bottom-color:#ffffff;font-weight:700;}',
+      '.yw-place-tab-row{display:inline-flex;align-items:center;justify-content:center;gap:4px;max-width:100%;font-size:14px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
+      '.yw-place-sub{font-size:11px;color:#8ea4c2;margin-top:2px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2;}',
+      '.yw-place-tab.is-active .yw-place-sub{color:#dbeafe;}',
+      '.yw-place-add{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:44px;background:transparent;border:none;border-left:1px solid #253b5c;color:#e2e8f0;font-size:22px;font-weight:400;cursor:pointer;padding:0;}',
+      '.yw-main-tabs{display:flex;gap:6px;padding:8px 10px;background:#131720;border-bottom:1px solid #222834;}',
+      '.yw-main-tab{flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:1px solid #2a3140;background:#1a202c;color:#94a3b8;transition:all .15s ease;}',
+      '.yw-main-tab.is-active-weather{border:1.5px solid #3b82f6;background:#1c283d;color:#ffffff;box-shadow:0 2px 6px rgba(59,130,246,0.22);}',
+      '.yw-main-tab.is-active-agri{border:1.5px solid #4caf50;background:#162c1e;color:#e8f5e9;box-shadow:0 2px 6px rgba(76,175,80,0.22);}',
+      '.yw-card-dark{background:#1a1e24;border-top:1px solid #262b34;border-bottom:1px solid #262b34;margin-bottom:8px;}',
+      '.yw-hero-split{display:flex;align-items:stretch;border-bottom:1px solid #272c36;}',
+      '.yw-hero-pane{flex:1;min-width:0;padding:12px 10px 14px;text-align:center;cursor:pointer;position:relative;background:transparent;border:none;color:inherit;transition:background .15s ease;}',
+      '.yw-hero-pane+.yw-hero-pane{border-left:1px solid #272c36;}',
+      '.yw-hero-pane.is-focused{background:rgba(43,138,255,0.06);}',
+      '.yw-hero-head{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap;font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:6px;line-height:1.25;}',
+      '.yw-hero-sat{color:#60a5fa;}',
+      '.yw-hero-sun{color:#ff6b6b;}',
+      '.yw-warn-pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:#e2e8f0;}',
+      '.yw-warn-dot{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#f5c518;color:#111827;font-size:12px;font-weight:900;line-height:1;}',
+      '.yw-hero-icon{display:flex;align-items:center;justify-content:center;height:68px;margin:2px 0 4px;}',
+      '.yw-hero-meta{display:flex;align-items:center;justify-content:center;gap:6px;font-size:16px;font-weight:600;color:#f1f5f9;margin-bottom:6px;}',
+      '.yw-drop-inline{display:inline-flex;align-items:center;gap:3px;color:#e2e8f0;font-variant-numeric:tabular-nums;}',
+      '.yw-hero-temps{display:flex;align-items:baseline;justify-content:center;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums;}',
+      '.yw-temp-hi{color:#ff5b4d;font-size:20px;font-weight:700;}',
+      '.yw-temp-lo{color:#4ea3ff;font-size:20px;font-weight:700;}',
+      '.yw-temp-diff{font-size:14px;font-weight:600;margin-left:2px;}',
+      '.yw-hourly-section{background:#1c2026;}',
+      '.yw-hourly-grid{display:flex;align-items:stretch;width:100%;overflow:hidden;}',
+      '.yw-hourly-labels{flex:0 0 44px;width:44px;background:#1c2026;border-right:1px solid #292f3a;display:flex;flex-direction:column;text-align:center;font-size:11px;color:#94a3b8;z-index:2;}',
+      '.yw-hourly-scroll{flex:1;min-width:0;display:flex;align-items:stretch;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:#3b4454 #1a1e24;}',
+      '.yw-h-col{flex:0 0 54px;width:54px;display:flex;flex-direction:column;text-align:center;border-top:3px solid transparent;box-sizing:border-box;font-variant-numeric:tabular-nums;}',
+      '.yw-h-col.is-now{border-top-color:#2b8aff;background:rgba(43,138,255,0.08);}',
+      '.yw-h-col.is-past{opacity:.5;}',
+      '.yw-h-col.is-midnight{border-left:1px solid #353d4b;}',
+      '.yw-h-sunevt{flex:0 0 52px;width:52px;display:flex;flex-direction:column;text-align:center;border-top:3px solid transparent;box-sizing:border-box;background:rgba(255,149,0,0.04);}',
+      '.yw-c-time{height:28px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#cbd5e1;line-height:1.05;}',
+      '.yw-h-col.is-now .yw-c-time{color:#ffffff;font-weight:800;}',
+      '.yw-c-datebadge{font-size:9px;color:#60a5fa;font-weight:700;line-height:1;}',
+      '.yw-c-icon{height:38px;display:flex;align-items:center;justify-content:center;}',
+      '.yw-c-temp{height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#f1f5f9;}',
+      '.yw-c-prob{height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#4ea3ff;}',
+      '.yw-c-rain{height:22px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#cbd5e1;}',
+      '.yw-c-hum{height:26px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#e2e8f0;}',
+      '.yw-c-wind{height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;line-height:1.15;color:#e2e8f0;padding-bottom:4px;}',
+      '.yw-sunevt-label{height:74px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#cbd5e1;}',
+      '.yw-hourly-labels .yw-c-time{border-bottom:1px solid #262c36;color:#94a3b8;font-weight:600;}',
+      '.yw-hourly-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 12px 9px;background:#1c2026;border-top:1px solid #262c36;}',
+      '.yw-day-pills{display:inline-flex;gap:5px;align-items:center;}',
+      '.yw-day-pill{border:1px solid #303846;background:#14181f;color:#94a3b8;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;cursor:pointer;}',
+      '.yw-day-pill.is-active{border-color:#2b8aff;background:#1c2e47;color:#ffffff;}',
+      '.yw-pub-time{font-size:12px;color:#94a3b8;}',
+      '.yw-now-card{background:#181b20;border-top:1px solid #262b34;border-bottom:1px solid #262b34;padding:12px 14px;margin-bottom:8px;}',
+      '.yw-now-title{font-size:16px;font-weight:700;color:#f1f5f9;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;}',
+      '.yw-now-metrics{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums;}',
+      '.yw-now-item{display:inline-flex;align-items:baseline;gap:4px;}',
+      '.yw-now-k{font-size:12px;color:#cbd5e1;}',
+      '.yw-now-v{font-size:26px;font-weight:600;color:#ffffff;letter-spacing:-0.02em;line-height:1;}',
+      '.yw-now-dec{font-size:18px;font-weight:600;color:#ffffff;}',
+      '.yw-now-u{font-size:12px;color:#cbd5e1;}',
+      '.yw-rain-banner{margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;background:#e6f1fc;color:#111827;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700;}',
+      '.yw-rain-banner.is-clear{background:#1f2937;color:#cbd5e1;border:1px solid #334155;}',
+      '.yw-radar-btn{margin-top:8px;width:100%;padding:10px 12px;border:1px solid #2b8aff;background:linear-gradient(180deg,#1e3a5f,#162a45);color:#e0f2fe;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"]{background:#0e1116;color:#e2e8f0;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] > *:not([data-weather-yahoo-ui="1"]){margin-left:10px!important;margin-right:10px!important;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] #tabForecast,#weatherModal.yw-modal [data-weather-main-panel="weather"] #tabHistory{color:#94a3b8;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentForecast,#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentHistory{background:#181c22;border:1px solid #282e38;border-radius:10px;padding:10px;margin-bottom:12px;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentForecast table,#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentHistory table,#weatherModal.yw-modal [data-weather-main-panel="weather"] #pastWeatherSection table{color:#e2e8f0;background:transparent;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentForecast th,#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentHistory th,#weatherModal.yw-modal [data-weather-main-panel="weather"] #pastWeatherSection th{background:#232832!important;color:#cbd5e1!important;border-bottom:1px solid #343b48!important;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentForecast tr,#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentHistory tr,#weatherModal.yw-modal [data-weather-main-panel="weather"] #pastWeatherSection tr{border-bottom:1px solid #262c36!important;background:transparent!important;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] #contentForecast > div:first-child button[onclick*="openRadarModal"]{display:none;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] [style*="background:#fff"],#weatherModal.yw-modal [data-weather-main-panel="weather"] [style*="background:#ffffff"],#weatherModal.yw-modal [data-weather-main-panel="weather"] [style*="background:#f8f9fa"],#weatherModal.yw-modal [data-weather-main-panel="weather"] [style*="background:#fff8e1"]{color:#1f2937;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] [style*="color:#333"]{color:#cbd5e1!important;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="weather"] [style*="background:#fff"] [style*="color:#333"],#weatherModal.yw-modal [data-weather-main-panel="weather"] [style*="background:#fff8e1"] [style*="color:#333"]{color:#333!important;}',
+      '#weatherModal.yw-modal [data-weather-main-panel="agri"]{padding:10px;background:#f4f7f9;color:#1e293b;}'
+    ].join('');
+    document.head.appendChild(style);
+  }
+
   function renderWeatherPlaceTabsHtml_() {
+    ensureYahooWeatherStyle_();
     const store = ensureWeatherPlaceSeed_();
     const active = global.__weatherRenderPlaceId || getWeatherActivePlaceId_();
     const ids = ['here', 'r1', 'r2'];
+    const addTarget = (!store.slots.r1) ? 'r1' : (!store.slots.r2 ? 'r2' : (active === 'r2' ? 'r2' : 'r1'));
+    const navSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="flex-shrink:0;opacity:.9;"><path d="M21 3L3 10.53v.98l6.84 2.65L12.48 21h.98L21 3z"/></svg>';
     const tabs = ids.map(function (id) {
       const on = id === active;
-      const title = weatherPlaceTitle_(id);
-      const sub = weatherPlaceSubtitle_(store, id);
-      const edit = (id === 'r1' || id === 'r2')
-        ? `<span role="button" tabindex="0" title="${title}を地図で指定" onclick="event.stopPropagation(); if(window.startWeatherPlaceMapPick) window.startWeatherPlaceMapPick('${id}')" style="flex:0 0 auto; align-self:stretch; display:flex; align-items:center; padding:0 6px; color:${on ? '#bbdefb' : '#1976d2'}; font-size:12px; cursor:pointer;">✎</span>`
-        : '';
-      return `<div style="flex:1; min-width:0; display:flex; align-items:stretch; border-radius:8px; overflow:hidden; border:1px solid ${on ? '#1565c0' : '#d0d7de'}; background:${on ? '#1976d2' : '#f7f9fb'}; color:${on ? '#fff' : '#37474f'};">
-        <div role="button" tabindex="0" onclick="if(window.switchWeatherPlace) window.switchWeatherPlace('${id}')" style="flex:1; min-width:0; padding:6px 6px 6px 8px; cursor:pointer; text-align:left;">
-          <div style="font-size:12px; font-weight:bold; line-height:1.2;">${id === 'here' ? '📍 ' : ''}${title}</div>
-          <div title="${escHtml_(sub)}" style="font-size:10px; line-height:1.3; margin-top:2px; opacity:${on ? '0.92' : '0.8'}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escHtml_(sub)}</div>
-        </div>
-        ${edit}
-      </div>`;
+      const slot = (id === 'r1' || id === 'r2') ? store.slots[id] : null;
+      let topLabel = weatherPlaceTitle_(id);
+      let subLabel = '';
+      if (id === 'here') {
+        topLabel = '現在地';
+        subLabel = '地図の中心';
+      } else if (slot && slot.name) {
+        topLabel = String(slot.name);
+        subLabel = id === 'r1' ? '地域1' : '地域2';
+      } else {
+        subLabel = 'タップして設定';
+      }
+      const cls = 'yw-place-tab' + (on ? ' is-active' : '');
+      const iconBit = id === 'here' ? navSvg : '';
+      return `<button type="button" class="${cls}" data-yw-place="${id}" onclick="if(window.switchWeatherPlace) window.switchWeatherPlace('${id}')">` +
+        `<span class="yw-place-tab-row">${iconBit}<span>${escHtml_(topLabel)}</span></span>` +
+        `<span class="yw-place-sub" title="${escHtml_(subLabel)}">${escHtml_(subLabel)}</span>` +
+        `</button>`;
     }).join('');
-    return `<div data-weather-place-tabs="1" style="display:flex; gap:6px; margin-bottom:10px;">${tabs}</div><!--WEATHER_PLACE_TABS_END-->`;
+    const plusBtn = `<button type="button" class="yw-place-add" title="地点を追加・変更" aria-label="地点を追加・変更" onclick="event.stopPropagation(); if(window.openWeatherPlacePicker) window.openWeatherPlacePicker('${addTarget}')">+</button>`;
+    return `<div data-weather-place-tabs="1" class="yw-place-bar">${tabs}${plusBtn}</div><!--WEATHER_PLACE_TABS_END-->`;
   }
 
   let activeWeatherMainTab_ = 'weather';
@@ -1764,17 +1867,41 @@
     const badgeHtml = alertCount > 0
       ? `<span style="background:#ef5350;color:#fff;font-size:10px;font-weight:bold;padding:1px 5px;border-radius:999px;margin-left:4px;vertical-align:middle;">⚠${alertCount}</span>`
       : '';
-    const weatherStyle = !isAgri
-      ? 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:2px solid #1976d2;background:#ffffff;color:#1565c0;box-shadow:0 1px 3px rgba(25,118,210,0.18);'
-      : 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:1px solid transparent;background:transparent;color:#546e7a;';
-    const agriStyle = isAgri
-      ? 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:2px solid #2e7d32;background:#ffffff;color:#1b5e20;box-shadow:0 1px 3px rgba(46,125,50,0.18);'
-      : 'flex:1;min-width:0;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;text-align:center;border:1px solid transparent;background:transparent;color:#546e7a;';
+    const wCls = 'yw-main-tab' + (!isAgri ? ' is-active-weather' : '');
+    const aCls = 'yw-main-tab' + (isAgri ? ' is-active-agri' : '');
 
-    return `<div data-weather-main-tabs="1" role="tablist" style="display:flex;gap:6px;margin-bottom:10px;padding:3px;background:#f1f5f9;border-radius:10px;border:1px solid #cbd5e1;">
-      <button type="button" data-weather-main-tab="weather" role="tab" aria-selected="${!isAgri ? 'true' : 'false'}" onclick="window.switchWeatherMainTab && window.switchWeatherMainTab('weather')" style="${weatherStyle}">🌦️ 週間天気予報</button>
-      <button type="button" data-weather-main-tab="agri" role="tab" aria-selected="${isAgri ? 'true' : 'false'}" onclick="window.switchWeatherMainTab && window.switchWeatherMainTab('agri')" style="${agriStyle}">🌱 農業ダッシュボード${badgeHtml}</button>
+    return `<div data-weather-main-tabs="1" role="tablist" class="yw-main-tabs">
+      <button type="button" data-weather-main-tab="weather" role="tab" aria-selected="${!isAgri ? 'true' : 'false'}" onclick="window.switchWeatherMainTab && window.switchWeatherMainTab('weather')" class="${wCls}">🌦️ 天気予報</button>
+      <button type="button" data-weather-main-tab="agri" role="tab" aria-selected="${isAgri ? 'true' : 'false'}" onclick="window.switchWeatherMainTab && window.switchWeatherMainTab('agri')" class="${aCls}">🌱 農業指標${badgeHtml}</button>
     </div>`;
+  }
+
+  function stripBalancedHostBlock_(html, marker) {
+    if (!html || !marker) return html;
+    let out = html;
+    for (let guard = 0; guard < 3; guard++) {
+      const mIdx = out.indexOf(marker);
+      if (mIdx < 0) break;
+      const openIdx = out.lastIndexOf('<div', mIdx);
+      if (openIdx < 0) break;
+      let depth = 0;
+      let pos = openIdx;
+      let closeEnd = -1;
+      const re = /<\/?div\b[^>]*>/gi;
+      re.lastIndex = openIdx;
+      let match;
+      while ((match = re.exec(out)) !== null) {
+        if (match[0].slice(0, 2).toLowerCase() === '</') depth--;
+        else depth++;
+        if (depth <= 0) {
+          closeEnd = match.index + match[0].length;
+          break;
+        }
+      }
+      if (closeEnd < 0) break;
+      out = out.slice(0, openIdx) + out.slice(closeEnd);
+    }
+    return out;
   }
 
   function wrapWeatherHtmlWithMainTabs_(html) {
@@ -1797,7 +1924,11 @@
     const closingMatch = tailPart.match(/<\/div>\s*$/);
     if (!closingMatch) return html;
 
-    const weatherBody = tailPart.slice(0, closingMatch.index);
+    let weatherBody = tailPart.slice(0, closingMatch.index);
+    if (weatherBody.indexOf('data-weather-yahoo-ui="1"') >= 0) {
+      weatherBody = stripBalancedHostBlock_(weatherBody, '現在の天気:');
+      weatherBody = stripBalancedHostBlock_(weatherBody, '本日の予想気温');
+    }
     const outerClose = closingMatch[0];
     const st = global.weatherSunshineState || {};
     const insights = st.agriInsights || null;
@@ -1819,18 +1950,8 @@
         const key = btn.getAttribute('data-weather-main-tab');
         const on = (key === 'agri') === isAgri;
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
-        if (on) {
-          const isAgriBtn = key === 'agri';
-          btn.style.border = isAgriBtn ? '2px solid #2e7d32' : '2px solid #1976d2';
-          btn.style.background = '#ffffff';
-          btn.style.color = isAgriBtn ? '#1b5e20' : '#1565c0';
-          btn.style.boxShadow = isAgriBtn ? '0 1px 3px rgba(46,125,50,0.18)' : '0 1px 3px rgba(25,118,210,0.18)';
-        } else {
-          btn.style.border = '1px solid transparent';
-          btn.style.background = 'transparent';
-          btn.style.color = '#546e7a';
-          btn.style.boxShadow = 'none';
-        }
+        btn.classList.remove('is-active-weather', 'is-active-agri');
+        if (on) btn.classList.add(key === 'agri' ? 'is-active-agri' : 'is-active-weather');
       });
     });
     scope.querySelectorAll('[data-weather-main-panel]').forEach(function (panel) {
@@ -1849,10 +1970,8 @@
   }
 
   let activeNearTermDayOffset_ = 0;
-  const NEAR_TERM_ACCENTS_ = ['#1565c0', '#ef6c00', '#6a1b9a'];
-  const NEAR_TERM_BG_ = ['#e3f2fd', '#fff3e0', '#f3e5f5'];
 
-  function syncNearTermWeatherDayDom_(root) {
+  function syncNearTermWeatherDayDom_(root, opts) {
     const scope = root && typeof root.querySelectorAll === 'function' ? root : (typeof document !== 'undefined' ? document : null);
     if (!scope) return;
     const active = Math.max(0, Math.min(2, Number(activeNearTermDayOffset_) || 0));
@@ -1860,17 +1979,31 @@
       wrap.querySelectorAll('[data-weather-day-tab]').forEach(function (btn) {
         const idx = Number(btn.getAttribute('data-weather-day-tab'));
         const on = idx === active;
-        const accent = NEAR_TERM_ACCENTS_[idx] || NEAR_TERM_ACCENTS_[0];
-        const bg = NEAR_TERM_BG_[idx] || NEAR_TERM_BG_[0];
         btn.setAttribute('aria-selected', on ? 'true' : 'false');
-        btn.style.border = on ? ('2px solid ' + accent) : '1px solid #d0d7de';
-        btn.style.background = on ? bg : '#f7f9fb';
-        btn.style.color = on ? accent : '#455a64';
+        if (on) btn.classList.add('is-active');
+        else btn.classList.remove('is-active');
       });
-      wrap.querySelectorAll('[data-weather-day-panel]').forEach(function (panel) {
-        const idx = Number(panel.getAttribute('data-weather-day-panel'));
-        panel.style.display = idx === active ? 'block' : 'none';
+      wrap.querySelectorAll('[data-yw-hero-day]').forEach(function (pane) {
+        const idx = Number(pane.getAttribute('data-yw-hero-day'));
+        if (idx === active) pane.classList.add('is-focused');
+        else pane.classList.remove('is-focused');
       });
+      const scroller = wrap.querySelector('[data-yw-hourly-scroll]');
+      if (scroller) {
+        const target = active === 0
+          ? scroller.querySelector('[data-yw-now-col="1"]')
+          : scroller.querySelector('[data-yw-day-start="' + active + '"]');
+        if (target && typeof scroller.scrollTo === 'function') {
+          const left = Math.max(0, (target.offsetLeft || 0) - 52);
+          try {
+            scroller.scrollTo({ left: left, behavior: (opts && opts.instant) ? 'auto' : 'smooth' });
+          } catch (e) {
+            scroller.scrollLeft = left;
+          }
+        } else if (target) {
+          scroller.scrollLeft = Math.max(0, (target.offsetLeft || 0) - 52);
+        }
+      }
     });
   }
 
@@ -1881,75 +2014,370 @@
     syncNearTermWeatherDayDom_(content || (typeof document !== 'undefined' ? document : null));
   }
 
+  function renderYahooWeatherSvg_(code, size, opts) {
+    opts = opts || {};
+    const c = Number(code);
+    const s = Number(size) || 24;
+    const isRain = (c >= 51 && c <= 67) || (c >= 80 && c <= 82);
+    const isSnow = (c >= 71 && c <= 77) || c === 85 || c === 86;
+    const isThunder = c >= 95;
+    const isFog = c === 45 || c === 48;
+    const isOvercast = c === 3;
+    const isPartly = c === 1 || c === 2;
+    const comboRainProb = Number(opts.dailyRainProb);
+
+    const sunShape = '<g fill="#ff8c1a"><circle cx="12" cy="12" r="4.8"/>' +
+      '<polygon points="12,1.5 10.6,5.2 13.4,5.2"/>' +
+      '<polygon points="12,22.5 10.6,18.8 13.4,18.8"/>' +
+      '<polygon points="1.5,12 5.2,10.6 5.2,13.4"/>' +
+      '<polygon points="22.5,12 18.8,10.6 18.8,13.4"/>' +
+      '<polygon points="4.6,4.6 6.8,8.0 8.0,6.8"/>' +
+      '<polygon points="19.4,19.4 17.2,16.0 16.0,17.2"/>' +
+      '<polygon points="19.4,4.6 16.0,6.8 17.2,8.0"/>' +
+      '<polygon points="4.6,19.4 8.0,17.2 6.8,16.0"/>' +
+      '</g>';
+
+    const umbrellaShape = '<g><path d="M12 3.2c-4.7 0-8.6 3.5-8.9 8h17.8c-.3-4.5-4.2-8-8.9-8z" fill="#4f8cff"/>' +
+      '<rect x="11.2" y="1.6" width="1.6" height="2.2" rx=".8" fill="#4f8cff"/>' +
+      '<path d="M12 11.2v6.9a2.1 2.1 0 0 1-4.2 0" fill="none" stroke="#4f8cff" stroke-width="1.9" stroke-linecap="round"/></g>';
+
+    const cloudPath = '<path d="M7.2 18.5h10.2a4.1 4.1 0 0 0 .5-8.17A5.6 5.6 0 0 0 7.1 8.8 4.4 4.4 0 0 0 7.2 18.5z"';
+
+    if (opts.isDailyHero && !isRain && !isSnow && !isThunder && isFinite(comboRainProb) && comboRainProb >= 50) {
+      return `<svg width="${s}" height="${s}" viewBox="0 0 32 24" aria-hidden="true">` +
+        '<g transform="translate(-1,0) scale(0.86)">' + sunShape + '</g>' +
+        '<g transform="translate(13.5,4.2) scale(0.76)">' + umbrellaShape + '</g></svg>';
+    }
+    if (isRain) {
+      if (opts.withCloud && (c === 51 || c === 53 || c === 80)) {
+        return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">` +
+          `${cloudPath} fill="#788596"/>` +
+          '<g transform="translate(4.5,5.5) scale(0.75)">' + umbrellaShape + '</g></svg>';
+      }
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">${umbrellaShape}</svg>`;
+    }
+    if (isThunder) {
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">` +
+        `${cloudPath} fill="#64748b"/>` +
+        '<polygon points="12.6,12 9.5,17 12.1,17 10.8,22 15.6,15.8 12.8,15.8" fill="#ffd43b"/></svg>';
+    }
+    if (isSnow) {
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">` +
+        `${cloudPath} fill="#94a3b8"/>` +
+        '<circle cx="9" cy="20.6" r="1.3" fill="#7dd3fc"/><circle cx="13" cy="21.4" r="1.3" fill="#7dd3fc"/><circle cx="16.5" cy="20.5" r="1.3" fill="#7dd3fc"/></svg>';
+    }
+    if (isPartly) {
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">` +
+        '<g transform="translate(-2,-2) scale(0.72)">' + sunShape + '</g>' +
+        '<path d="M8.4 19.6h9.6a3.5 3.5 0 0 0 .4-6.98 4.8 4.8 0 0 0-9.2-1.3A3.8 3.8 0 0 0 8.4 19.6z" fill="#9aa5b4"/></svg>';
+    }
+    if (isOvercast || isFog) {
+      const fill = isFog ? '#7b8798' : '#8b96a6';
+      return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">${cloudPath} fill="${fill}"/></svg>`;
+    }
+    return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">${sunShape}</svg>`;
+  }
+
+  function renderDropletSvg_() {
+    return '<svg width="10" height="13" viewBox="0 0 12 16" aria-hidden="true" style="flex-shrink:0;"><path d="M6 1C3.2 5.2 1.2 8.1 1.2 10.6a4.8 4.8 0 1 0 9.6 0C10.8 8.1 8.8 5.2 6 1z" fill="#3b9eff"/></svg>';
+  }
+
+  function renderSunEventSvg_(isSunset) {
+    const arrow = isSunset
+      ? '<path d="M12 2.2v4.8m0 0l-2-2m2 2l2-2" fill="none" stroke="#ff9500" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+      : '<path d="M12 7V2.2m0 0l-2 2m2-2l2 2" fill="none" stroke="#ff9500" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>';
+    return '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">' +
+      arrow +
+      '<path d="M7.5 14.5a4.5 4.5 0 0 1 9 0z" fill="#ff8c1a"/>' +
+      '<line x1="3.5" y1="15.8" x2="20.5" y2="15.8" stroke="#38b2ac" stroke-width="1.6" stroke-linecap="round"/>' +
+      '<line x1="6" y1="18.6" x2="18" y2="18.6" stroke="#38b2ac" stroke-width="1.5" stroke-linecap="round"/>' +
+      '<line x1="8.8" y1="21.2" x2="15.2" y2="21.2" stroke="#38b2ac" stroke-width="1.4" stroke-linecap="round"/>' +
+      '</svg>';
+  }
+
+  function windDirToJp16_(deg) {
+    const d = Number(deg);
+    if (!isFinite(d)) return '-';
+    const dirs = ['北', '北北東', '北東', '東北東', '東', '東南東', '南東', '南南東', '南', '南南西', '南西', '西南西', '西', '西北西', '北西', '北北西'];
+    return dirs[Math.round((((d % 360) + 360) % 360) / 22.5) % 16];
+  }
+
+  function renderWindArrowSvg_(deg, speedMs) {
+    const d = Number(deg);
+    const sp = Number(speedMs);
+    const color = sp >= 10 ? '#ff6b6b' : (sp >= 6 ? '#ffb74d' : '#4ea3ff');
+    const rot = isFinite(d) ? Math.round(((d + 180) % 360)) : 0;
+    return `<svg width="14" height="14" viewBox="0 0 24 24" style="transform:rotate(${rot}deg);flex-shrink:0;" aria-hidden="true"><polygon points="12,3 18.5,20 12,15.8 5.5,20" fill="${color}"/></svg>`;
+  }
+
+  function formatHourSunEventHm_(isoStr) {
+    if (!isoStr || typeof isoStr !== 'string') return null;
+    const m = isoStr.match(/T(\d{2}):(\d{2})/);
+    if (!m) return null;
+    return { hour: parseInt(m[1], 10), min: parseInt(m[2], 10), label: `${Number(m[1])}:${m[2]}` };
+  }
+
+  function computeDailyMaxHourlyProb_(hourly, dayStr) {
+    if (!hourly || !Array.isArray(hourly.time) || !Array.isArray(hourly.precipitation_probability)) return null;
+    let maxP = null;
+    for (let i = 0; i < hourly.time.length; i++) {
+      if (String(hourly.time[i] || '').slice(0, 10) !== dayStr) continue;
+      const p = Number(hourly.precipitation_probability[i]);
+      if (isFinite(p) && (maxP === null || p > maxP)) maxP = p;
+    }
+    return maxP;
+  }
+
+  function renderHeroDiffSpan_(curVal, prevVal) {
+    const c = Number(curVal);
+    const p = Number(prevVal);
+    if (!isFinite(c) || !isFinite(p)) return '';
+    const d = Math.round(c) - Math.round(p);
+    const txt = d > 0 ? `[+${d}]` : (d < 0 ? `[${d}]` : '[±0]');
+    return `<span class="yw-temp-diff">${txt}</span>`;
+  }
+
+  function buildYwRainStatus_(data, curRainMm, todayMaxProb) {
+    const rain = Number(curRainMm);
+    const h = data && data.hourly ? data.hourly : null;
+    if (isFinite(rain) && rain >= 0.2) {
+      return { rainy: true, text: `現在雨が降っています（${fmtWeatherMm_(rain)}）` };
+    }
+    if (h && Array.isArray(h.time)) {
+      const now = new Date();
+      const curStamp = weatherYmd_(now) + 'T' + String(now.getHours()).padStart(2, '0');
+      let nowIdx = h.time.findIndex(function (t) { return String(t || '').slice(0, 13) >= curStamp; });
+      if (nowIdx < 0) nowIdx = 0;
+      for (let off = 1; off <= 3 && (nowIdx + off) < h.time.length; off++) {
+        const pMm = Number(h.precipitation && h.precipitation[nowIdx + off]);
+        const pPr = Number(h.precipitation_probability && h.precipitation_probability[nowIdx + off]);
+        if ((isFinite(pMm) && pMm >= 0.2) || (isFinite(pPr) && pPr >= 60)) {
+          return { rainy: true, text: `${off}時間後に雨が降りはじめます` };
+        }
+      }
+    }
+    if (isFinite(Number(todayMaxProb)) && Number(todayMaxProb) >= 50) {
+      return { rainy: true, text: `このあと雨の可能性（降水確率 ${Math.round(Number(todayMaxProb))}%）` };
+    }
+    return { rainy: false, text: 'しばらく雨の心配はありません' };
+  }
+
   function renderNearTermWeatherSectionHtml(data) {
-    const emojiFn = typeof global.getWeatherEmoji === 'function' ? global.getWeatherEmoji : fallbackWeatherEmoji_;
-    const labels = ['今日', '明日', '明後日'];
-    const accents = NEAR_TERM_ACCENTS_;
-    const bgColors = NEAR_TERM_BG_;
+    ensureYahooWeatherStyle_();
+    const descFn = typeof global.getWeatherDescription === 'function' ? global.getWeatherDescription : fallbackWeatherDesc_;
     const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
     const now = new Date();
     const activeDay = Math.max(0, Math.min(2, Number(activeNearTermDayOffset_) || 0));
+    const st = global.weatherSunshineState || {};
+    const insights = st.agriInsights || null;
+
     let html = renderWeatherPlaceTabsHtml_();
-    html += `<div style="font-weight:bold; color:#333; margin:0 0 8px;">🕒 今日〜明後日（1時間ごと）</div>`;
-    if (!data || !data.hourly || !Array.isArray(data.hourly.time)) {
-      html += `<div style="font-size:12px; color:#888; margin-bottom:12px;">時間ごとの予報がありません</div>`;
-      return html;
+
+    const daily = data && data.daily ? data.daily : null;
+    const hourly = data && data.hourly ? data.hourly : null;
+    const todayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const dayAfterDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+    const todayStr = weatherYmd_(todayDate);
+    const tomorrowStr = weatherYmd_(tomorrowDate);
+    const dayAfterStr = weatherYmd_(dayAfterDate);
+
+    const todayIdx = (daily && Array.isArray(daily.time)) ? daily.time.indexOf(todayStr) : -1;
+    const tomorrowIdx = (daily && Array.isArray(daily.time)) ? daily.time.indexOf(tomorrowStr) : -1;
+
+    const getDaySummary = function (idx, dStr, dateObj) {
+      const code = (daily && daily.weathercode && idx >= 0) ? daily.weathercode[idx] : (data && data.current_weather ? data.current_weather.weathercode : 0);
+      const maxT = (daily && daily.temperature_2m_max && idx >= 0) ? daily.temperature_2m_max[idx] : null;
+      const minT = (daily && daily.temperature_2m_min && idx >= 0) ? daily.temperature_2m_min[idx] : null;
+      const prevMaxT = (daily && daily.temperature_2m_max && idx > 0) ? daily.temperature_2m_max[idx - 1] : null;
+      const prevMinT = (daily && daily.temperature_2m_min && idx > 0) ? daily.temperature_2m_min[idx - 1] : null;
+      const rainSum = (daily && daily.precipitation_sum && idx >= 0) ? Number(daily.precipitation_sum[idx]) : null;
+      const windMax = (daily && daily.wind_speed_10m_max && idx >= 0) ? Number(daily.wind_speed_10m_max[idx]) : null;
+      let probMax = (daily && daily.precipitation_probability_max && idx >= 0 && daily.precipitation_probability_max[idx] != null)
+        ? Number(daily.precipitation_probability_max[idx])
+        : computeDailyMaxHourlyProb_(hourly, dStr);
+      if (probMax != null && isFinite(probMax)) probMax = Math.round(probMax);
+      else probMax = null;
+      const wDay = dateObj.getDay();
+      const wColorCls = wDay === 6 ? 'yw-hero-sat' : (wDay === 0 ? 'yw-hero-sun' : '');
+      const mdLabel = `${dateObj.getMonth() + 1}/${dateObj.getDate()}(<span class="${wColorCls}">${weekdays[wDay]}</span>)`;
+      return { code, maxT, minT, prevMaxT, prevMinT, rainSum, windMax, probMax, mdLabel };
+    };
+
+    const tSum = getDaySummary(todayIdx, todayStr, todayDate);
+    const mSum = getDaySummary(tomorrowIdx, tomorrowStr, tomorrowDate);
+    const hasCaution = !!((insights && Array.isArray(insights.alerts) && insights.alerts.length > 0)
+      || (tSum.rainSum != null && tSum.rainSum >= 20)
+      || (tSum.windMax != null && tSum.windMax >= 10)
+      || (tSum.probMax != null && tSum.probMax >= 80));
+    const cautionBadge = hasCaution
+      ? '<span class="yw-warn-pill" onclick="event.stopPropagation();if(window.switchWeatherMainTab)window.switchWeatherMainTab(\'agri\');" title="農業指標・アラートを見る"><span class="yw-warn-dot">!</span><span>注意報</span></span>'
+      : '';
+
+    const todayMaxFmt = tSum.maxT != null ? Math.round(Number(tSum.maxT)) + '℃' : '--℃';
+    const todayMinFmt = tSum.minT != null ? Math.round(Number(tSum.minT)) + '℃' : '--℃';
+    const tomMaxFmt = mSum.maxT != null ? Math.round(Number(mSum.maxT)) + '℃' : '--℃';
+    const tomMinFmt = mSum.minT != null ? Math.round(Number(mSum.minT)) + '℃' : '--℃';
+
+    const heroHtml = `<div class="yw-hero-split">` +
+      `<button type="button" data-yw-hero-day="0" class="yw-hero-pane${activeDay === 0 ? ' is-focused' : ''}" onclick="window.switchNearTermWeatherDay && window.switchNearTermWeatherDay(0)">` +
+        `<div class="yw-hero-head"><span>今日${tSum.mdLabel}</span>${cautionBadge}</div>` +
+        `<div class="yw-hero-icon">${renderYahooWeatherSvg_(tSum.code, 62, { isDailyHero: true, dailyRainProb: tSum.probMax })}</div>` +
+        `<div class="yw-hero-meta"><span>${escHtml_(descFn(tSum.code))}</span><span class="yw-drop-inline">${renderDropletSvg_()}<span>${tSum.probMax != null ? tSum.probMax + '%' : (tSum.rainSum != null ? fmtWeatherMm_(tSum.rainSum) : '--')}</span></span></div>` +
+        `<div class="yw-hero-temps"><span class="yw-temp-hi">${todayMaxFmt}${renderHeroDiffSpan_(tSum.maxT, tSum.prevMaxT)}</span><span class="yw-temp-lo">${todayMinFmt}${renderHeroDiffSpan_(tSum.minT, tSum.prevMinT)}</span></div>` +
+      `</button>` +
+      `<button type="button" data-yw-hero-day="1" class="yw-hero-pane${activeDay === 1 ? ' is-focused' : ''}" onclick="window.switchNearTermWeatherDay && window.switchNearTermWeatherDay(1)">` +
+        `<div class="yw-hero-head"><span>明日${mSum.mdLabel}</span></div>` +
+        `<div class="yw-hero-icon">${renderYahooWeatherSvg_(mSum.code, 56, { isDailyHero: true, dailyRainProb: mSum.probMax })}</div>` +
+        `<div class="yw-hero-meta"><span class="yw-drop-inline">${renderDropletSvg_()}<span>${mSum.probMax != null ? mSum.probMax + '%' : (mSum.rainSum != null ? fmtWeatherMm_(mSum.rainSum) : '--')}</span></span></div>` +
+        `<div class="yw-hero-temps"><span class="yw-temp-hi">${tomMaxFmt}</span><span class="yw-temp-lo">${tomMinFmt}</span></div>` +
+      `</button>` +
+    `</div>`;
+
+    // Build sunrise/sunset lookup keyed by YYYY-MM-DD|hour
+    const sunEvents = {};
+    if (daily && Array.isArray(daily.time)) {
+      [todayStr, tomorrowStr, dayAfterStr].forEach(function (dKey) {
+        const dIdx = daily.time.indexOf(dKey);
+        if (dIdx < 0) return;
+        const sr = daily.sunrise && formatHourSunEventHm_(daily.sunrise[dIdx]);
+        const ss = daily.sunset && formatHourSunEventHm_(daily.sunset[dIdx]);
+        if (sr) sunEvents[dKey + '|' + sr.hour] = { label: sr.label, title: '日の出', isSunset: false };
+        if (ss) sunEvents[dKey + '|' + ss.hour] = { label: ss.label, title: '日の入', isSunset: true };
+      });
     }
-    const times = data.hourly.time;
-    const tabButtons = [];
-    const dayPanels = [];
-    for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
-      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
-      const dayStr = weatherYmd_(day);
-      const dateLabel = `${day.getMonth() + 1}/${day.getDate()}(${weekdays[day.getDay()]})`;
-      const on = dayOffset === activeDay;
-      const accent = accents[dayOffset];
-      const bg = bgColors[dayOffset];
-      let dayEmoji = '';
-      let summary = '';
-      if (data.daily && Array.isArray(data.daily.time)) {
-        const di = data.daily.time.indexOf(dayStr);
-        if (di >= 0) {
-          const code = data.daily.weathercode ? data.daily.weathercode[di] : 0;
-          const maxT = data.daily.temperature_2m_max ? data.daily.temperature_2m_max[di] : null;
-          const minT = data.daily.temperature_2m_min ? data.daily.temperature_2m_min[di] : null;
-          const rain = data.daily.precipitation_sum ? data.daily.precipitation_sum[di] : null;
-          dayEmoji = emojiFn(code);
-          summary = `${dayEmoji} <span style="color:#F44336; font-weight:bold;">${fmtWeatherTemp_(maxT)}℃</span> / <span style="color:#1976D2; font-weight:bold;">${fmtWeatherTemp_(minT)}℃</span> <span style="color:#2196F3; font-weight:bold;">${fmtWeatherMm_(rain)}</span>`;
+
+    let colsHtml = '';
+    const times = (hourly && Array.isArray(hourly.time)) ? hourly.time : [];
+    const curHourPrefix = todayStr + 'T' + String(now.getHours()).padStart(2, '0');
+    let nowHourIdx = times.findIndex(function (t) { return String(t || '').slice(0, 13) === curHourPrefix; });
+    if (nowHourIdx < 0) {
+      nowHourIdx = times.findIndex(function (t) { return String(t || '').slice(0, 13) >= curHourPrefix; });
+    }
+    if (nowHourIdx < 0) nowHourIdx = 0;
+
+    if (times.length) {
+      const startIdx = Math.max(0, nowHourIdx - 1);
+      const endIdx = Math.min(times.length, startIdx + 49);
+      for (let i = startIdx; i < endIdx; i++) {
+        const stamp = String(times[i] || '');
+        const dPart = stamp.slice(0, 10);
+        const hPart = parseInt(stamp.slice(11, 13), 10);
+        if (!isFinite(hPart)) continue;
+        const isPast = i < nowHourIdx;
+        const isNow = i === nowHourIdx;
+        const dayOff = dPart === todayStr ? 0 : (dPart === tomorrowStr ? 1 : (dPart === dayAfterStr ? 2 : -1));
+        const isMidnight = hPart === 0 && i > startIdx;
+        const hCode = hourly.weathercode ? hourly.weathercode[i] : 0;
+        const hTemp = hourly.temperature_2m ? hourly.temperature_2m[i] : null;
+        const hRain = hourly.precipitation ? hourly.precipitation[i] : null;
+        const hProb = (hourly.precipitation_probability && hourly.precipitation_probability[i] != null)
+          ? Math.round(Number(hourly.precipitation_probability[i]))
+          : null;
+        const hHum = (hourly.relative_humidity_2m && hourly.relative_humidity_2m[i] != null)
+          ? Math.round(Number(hourly.relative_humidity_2m[i]))
+          : null;
+        const hWind = hourly.wind_speed_10m ? Number(hourly.wind_speed_10m[i]) : null;
+        const hWindDeg = hourly.wind_direction_10m ? Number(hourly.wind_direction_10m[i]) : null;
+
+        const cls = 'yw-h-col' + (isNow ? ' is-now' : '') + (isPast ? ' is-past' : '') + (isMidnight ? ' is-midnight' : '');
+        const attrs = (isNow ? ' data-yw-now-col="1"' : '') + ((isMidnight && dayOff > 0) ? ` data-yw-day-start="${dayOff}"` : '');
+        const mdBadge = isMidnight ? `<span class="yw-c-datebadge">${Number(dPart.slice(5, 7))}/${Number(dPart.slice(8, 10))}</span>` : '';
+        const windSpeedLabel = (hWind != null && isFinite(hWind)) ? `${Math.round(hWind)}m` : '-';
+        const windDirLabel = windDirToJp16_(hWindDeg);
+
+        colsHtml += `<div class="${cls}"${attrs}>` +
+          `<div class="yw-c-time">${mdBadge}<span>${hPart}</span></div>` +
+          `<div class="yw-c-icon">${renderYahooWeatherSvg_(hCode, 22, { withCloud: true })}</div>` +
+          `<div class="yw-c-temp">${hTemp != null && isFinite(Number(hTemp)) ? Math.round(Number(hTemp)) + '℃' : '-'}</div>` +
+          `<div class="yw-c-prob">${hProb != null && isFinite(hProb) ? hProb + '%' : '-'}</div>` +
+          `<div class="yw-c-rain">${hRain != null && isFinite(Number(hRain)) ? fmtWeatherMm_(hRain) : '-'}</div>` +
+          `<div class="yw-c-hum">${hHum != null && isFinite(hHum) ? hHum + '%' : '-'}</div>` +
+          `<div class="yw-c-wind">${renderWindArrowSvg_(hWindDeg, hWind)}<span>${escHtml_(windDirLabel)}</span><span>${windSpeedLabel}</span></div>` +
+        `</div>`;
+
+        const sunEvt = sunEvents[dPart + '|' + hPart];
+        if (sunEvt) {
+          colsHtml += `<div class="yw-h-sunevt">` +
+            `<div class="yw-c-time" style="color:#cbd5e1;font-size:11px;">${escHtml_(sunEvt.label)}</div>` +
+            `<div class="yw-c-icon">${renderSunEventSvg_(sunEvt.isSunset)}</div>` +
+            `<div class="yw-sunevt-label">${escHtml_(sunEvt.title)}</div>` +
+          `</div>`;
         }
       }
-      const cards = [];
-      for (let i = 0; i < times.length; i++) {
-        const stamp = String(times[i] || '');
-        if (stamp.slice(0, 10) !== dayStr) continue;
-        const hour = parseInt(stamp.slice(11, 13), 10);
-        if (!isFinite(hour)) continue;
-        if (dayOffset === 0 && hour < now.getHours()) continue;
-        const hCode = data.hourly.weathercode ? data.hourly.weathercode[i] : 0;
-        const hTemp = data.hourly.temperature_2m ? data.hourly.temperature_2m[i] : null;
-        const hPrecip = data.hourly.precipitation ? data.hourly.precipitation[i] : null;
-        cards.push(`<div style="min-width:52px; flex:0 0 auto; text-align:center; background:#f9f9f9; padding:6px 4px; border-radius:6px; border:1px solid #eee;">
-          <div style="font-size:12px; color:#666;">${hour}時</div>
-          <div style="font-size:18px; margin:3px 0;">${emojiFn(hCode)}</div>
-          <div style="font-size:13px; font-weight:bold;">${fmtWeatherTemp_(hTemp)}℃</div>
-          <div style="font-size:11px; color:#2196F3;">${fmtWeatherMm_(hPrecip)}</div>
-        </div>`);
-      }
-      tabButtons.push(`<button type="button" data-weather-day-tab="${dayOffset}" role="tab" aria-selected="${on ? 'true' : 'false'}" onclick="window.switchNearTermWeatherDay && window.switchNearTermWeatherDay(${dayOffset})" style="flex:1; min-width:0; padding:7px 6px; border-radius:8px; cursor:pointer; text-align:center; border:${on ? '2px solid ' + accent : '1px solid #d0d7de'}; background:${on ? bg : '#f7f9fb'}; color:${on ? accent : '#455a64'};">
-        <div style="font-size:13px; font-weight:bold; line-height:1.25;">${dayEmoji ? dayEmoji + ' ' : ''}${labels[dayOffset]}</div>
-        <div style="font-size:11px; color:#607d8b; margin-top:2px; line-height:1.2;">${dateLabel}</div>
-      </button>`);
-      dayPanels.push(`<div data-weather-day-panel="${dayOffset}" style="display:${on ? 'block' : 'none'}; background:#fff; border:1px solid #e0e0e0; border-top:3px solid ${accent}; border-radius:8px; padding:10px;">
-        <div style="font-size:12px; margin-bottom:8px; line-height:1.4;"><span style="font-weight:bold; color:${accent}; margin-right:6px;">${labels[dayOffset]} ${dateLabel}</span>${summary || '<span style="color:#999;">日別の予報がありません</span>'}</div>
-        <div style="display:flex; overflow-x:auto; gap:6px; padding-bottom:4px; -webkit-overflow-scrolling:touch;">
-          ${cards.length ? cards.join('') : '<div style="font-size:12px; color:#888; padding:4px 0;">予報はありません</div>'}
-        </div>
-      </div>`);
     }
-    html += `<div data-weather-day-tabs="1" style="margin-bottom:14px;">
-      <div role="tablist" style="display:flex; gap:6px; margin-bottom:8px;">${tabButtons.join('')}</div>
-      ${dayPanels.join('')}
-    </div>`;
+
+    const hourlyHtml = `<div class="yw-hourly-section">` +
+      (colsHtml
+        ? `<div class="yw-hourly-grid">` +
+            `<div class="yw-hourly-labels">` +
+              `<div class="yw-c-time">時刻</div>` +
+              `<div class="yw-c-icon"></div>` +
+              `<div class="yw-c-temp">気温</div>` +
+              `<div class="yw-c-prob" style="color:#94a3b8;font-weight:500;">降水</div>` +
+              `<div class="yw-c-rain"></div>` +
+              `<div class="yw-c-hum" style="color:#94a3b8;">湿度</div>` +
+              `<div class="yw-c-wind" style="color:#94a3b8;justify-content:center;">風</div>` +
+            `</div>` +
+            `<div class="yw-hourly-scroll" data-yw-hourly-scroll="1">${colsHtml}</div>` +
+          `</div>`
+        : `<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px;">時間ごとの予報がありません</div>`) +
+      `<div class="yw-hourly-footer">` +
+        `<div class="yw-day-pills">` +
+          `<button type="button" data-weather-day-tab="0" role="tab" aria-selected="${activeDay === 0 ? 'true' : 'false'}" class="yw-day-pill${activeDay === 0 ? ' is-active' : ''}" onclick="window.switchNearTermWeatherDay && window.switchNearTermWeatherDay(0)">今日</button>` +
+          `<button type="button" data-weather-day-tab="1" role="tab" aria-selected="${activeDay === 1 ? 'true' : 'false'}" class="yw-day-pill${activeDay === 1 ? ' is-active' : ''}" onclick="window.switchNearTermWeatherDay && window.switchNearTermWeatherDay(1)">明日</button>` +
+          `<button type="button" data-weather-day-tab="2" role="tab" aria-selected="${activeDay === 2 ? 'true' : 'false'}" class="yw-day-pill${activeDay === 2 ? ' is-active' : ''}" onclick="window.switchNearTermWeatherDay && window.switchNearTermWeatherDay(2)">明後日</button>` +
+        `</div>` +
+        `<div class="yw-pub-time">${now.getHours()}時発表</div>` +
+      `</div>` +
+    `</div>`;
+
+    // Current conditions card ("いまの天気")
+    const cur = (data && data.current) ? data.current : {};
+    const cw = (data && data.current_weather) ? data.current_weather : {};
+    const curTempRaw = cur.temperature_2m != null ? cur.temperature_2m : (cw.temperature != null ? cw.temperature : (hourly && hourly.temperature_2m ? hourly.temperature_2m[nowHourIdx] : null));
+    const curPressRaw = cur.pressure_msl != null ? cur.pressure_msl : (hourly && hourly.pressure_msl ? hourly.pressure_msl[nowHourIdx] : null);
+    const curHumRaw = cur.relative_humidity_2m != null ? cur.relative_humidity_2m : (hourly && hourly.relative_humidity_2m ? hourly.relative_humidity_2m[nowHourIdx] : null);
+    const curRainRaw = cur.precipitation != null ? cur.precipitation : (hourly && hourly.precipitation ? hourly.precipitation[nowHourIdx] : null);
+
+    const fmtSplitDecimal = function (val, decimals) {
+      const n = Number(val);
+      if (!isFinite(n)) return '<span class="yw-now-v">--</span>';
+      const s = n.toFixed(decimals);
+      const parts = s.split('.');
+      if (parts.length === 2) {
+        return `<span class="yw-now-v">${parts[0]}</span><span class="yw-now-dec">.${parts[1]}</span>`;
+      }
+      return `<span class="yw-now-v">${s}</span>`;
+    };
+
+    const tempHtml = fmtSplitDecimal(curTempRaw, 1);
+    const pressHtml = fmtSplitDecimal(curPressRaw, 1);
+    const humVal = (curHumRaw != null && isFinite(Number(curHumRaw))) ? String(Math.round(Number(curHumRaw))) : '--';
+    const rainStatus = buildYwRainStatus_(data, curRainRaw, tSum.probMax);
+    const hasCoords = isFinite(Number(st.lat)) && isFinite(Number(st.lng));
+    const radarBtnHtml = hasCoords
+      ? `<button type="button" class="yw-radar-btn" onclick="openRadarModal(${Number(st.lat)}, ${Number(st.lng)})"><span>🌧️</span><span>雨雲レーダーを大画面で見る</span></button>`
+      : '';
+
+    const nowCardHtml = `<div class="yw-now-card">` +
+      `<div class="yw-now-title"><span>いまの天気</span><span style="font-size:12px;color:#94a3b8;font-weight:500;">${renderYahooWeatherSvg_(cur.weather_code != null ? cur.weather_code : cw.weathercode, 18)}</span></div>` +
+      `<div class="yw-now-metrics">` +
+        `<div class="yw-now-item"><span class="yw-now-k">気温</span>${tempHtml}<span class="yw-now-u">℃</span></div>` +
+        `<div class="yw-now-item"><span class="yw-now-k">気圧</span>${pressHtml}<span class="yw-now-u">hPa</span></div>` +
+        `<div class="yw-now-item"><span class="yw-now-k">湿度</span><span class="yw-now-v">${humVal}</span><span class="yw-now-u">%</span></div>` +
+      `</div>` +
+      `<div class="yw-rain-banner${rainStatus.rainy ? '' : ' is-clear'}">` +
+        `${rainStatus.rainy ? renderYahooWeatherSvg_(61, 18) : renderYahooWeatherSvg_(0, 16)}` +
+        `<span>${escHtml_(rainStatus.text)}</span>` +
+      `</div>` +
+      radarBtnHtml +
+    `</div>`;
+
+    html += `<div data-weather-day-tabs="1" data-weather-yahoo-ui="1">` +
+      `<div class="yw-card-dark">${heroHtml}${hourlyHtml}</div>` +
+      nowCardHtml +
+    `</div><!--WEATHER_NEAR_TERM_END-->`;
     return html;
   }
 
@@ -2011,17 +2439,29 @@
   }
 
   function weatherHtmlHasPlaceTabs_(html) {
-    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0 && html.indexOf('data-weather-day-tabs') >= 0 && html.indexOf('data-weather-main-tabs') >= 0;
+    return typeof html === 'string' && html.indexOf('data-weather-place-tabs') >= 0 && html.indexOf('data-weather-day-tabs') >= 0 && html.indexOf('data-weather-main-tabs') >= 0 && html.indexOf('data-weather-yahoo-ui') >= 0;
+  }
+
+  function scheduleSyncNearTermScroll_(content) {
+    const run = function () { syncNearTermWeatherDayDom_(content, { instant: true }); };
+    if (typeof global.requestAnimationFrame === 'function') {
+      global.requestAnimationFrame(run);
+    } else {
+      setTimeout(run, 0);
+    }
   }
 
   function paintOpenWeatherModal_(html) {
+    ensureYahooWeatherStyle_();
     const content = document.getElementById('weatherContent');
     const modal = document.getElementById('weatherModal');
     if (!content || !modal) return;
+    modal.classList.add('yw-modal');
     if (modal.style.display === 'none' || !modal.style.display) return;
     content.innerHTML = html;
-    syncNearTermWeatherDayDom_(content);
+    syncNearTermWeatherDayDom_(content, { instant: true });
     syncWeatherMainTabDom_(content);
+    scheduleSyncNearTermScroll_(content);
     hydrateAgriWeatherAsyncPanels_();
   }
 
@@ -2082,7 +2522,7 @@
   }
 
   function weatherPlaceMessageHtml_(text) {
-    return `<div style="padding:10px;">${renderWeatherPlaceTabsHtml_()}<div style="text-align:center; padding:16px 8px; color:#555; font-size:13px;">${escHtml_(text)}</div></div>`;
+    return `<div>${renderWeatherPlaceTabsHtml_()}<div style="text-align:center; padding:24px 12px; color:#cbd5e1; font-size:13px;">${escHtml_(text)}</div></div>`;
   }
 
   async function switchWeatherPlace(placeId, opts) {
@@ -2100,6 +2540,7 @@
     const content = document.getElementById('weatherContent');
     const modal = document.getElementById('weatherModal');
     const modalOpen = !!(modal && content && modal.style.display && modal.style.display !== 'none');
+    if (modal) modal.classList.add('yw-modal');
     if (!pos || !isFinite(pos.lat) || !isFinite(pos.lng)) {
       if (modalOpen) content.innerHTML = weatherPlaceMessageHtml_('この場所の位置を取得できませんでした');
       return;
@@ -2111,8 +2552,9 @@
       applyWeatherBundle_(bundle);
       if (modalOpen) {
         content.innerHTML = bundle.html;
-        syncNearTermWeatherDayDom_(content);
+        syncNearTermWeatherDayDom_(content, { instant: true });
         syncWeatherMainTabDom_(content);
+        scheduleSyncNearTermScroll_(content);
         hydrateAgriWeatherAsyncPanels_();
       }
       return;
@@ -2278,8 +2720,10 @@
   }
 
   function showWeatherModalAfterMapPick_() {
+    ensureYahooWeatherStyle_();
     const modal = document.getElementById('weatherModal');
     if (!modal) return;
+    modal.classList.add('yw-modal');
     modal.classList.remove('weather-modal-closing');
     modal.style.display = 'flex';
   }
@@ -2547,12 +2991,15 @@
   }
 
   function presentWeatherModal(opts) {
+    ensureYahooWeatherStyle_();
     if (opts && (opts.tab === 'agri' || opts.tab === 'weather')) {
       activeWeatherMainTab_ = opts.tab;
     }
     const content = document.getElementById('weatherContent');
     const modal = document.getElementById('weatherModal');
     if (!content || !modal) return;
+    modal.classList.add('yw-modal');
+    modal.classList.remove('weather-modal-closing');
     modal.style.display = 'flex';
     const active = getWeatherActivePlaceId_();
     global.__weatherRenderPlaceId = active;
@@ -2561,15 +3008,17 @@
     if (fresh) {
       applyWeatherBundle_(bundle);
       content.innerHTML = bundle.html;
-      syncNearTermWeatherDayDom_(content);
+      syncNearTermWeatherDayDom_(content, { instant: true });
       syncWeatherMainTabDom_(content);
+      scheduleSyncNearTermScroll_(content);
       hydrateAgriWeatherAsyncPanels_();
       return;
     }
     if (active === 'here' && weatherHtmlHasPlaceTabs_(global.cachedWeatherHtml)) {
       content.innerHTML = global.cachedWeatherHtml;
-      syncNearTermWeatherDayDom_(content);
+      syncNearTermWeatherDayDom_(content, { instant: true });
       syncWeatherMainTabDom_(content);
+      scheduleSyncNearTermScroll_(content);
       hydrateAgriWeatherAsyncPanels_();
       return;
     }

@@ -955,3 +955,200 @@
     color: #888;
   }
 }
+
+/* ---- 施肥・農薬（栽培設定・栽培歴） ---- */
+.cult-mat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cult-mat-card {
+  padding: 10px 12px;
+  border: 1px solid #e3e8e3;
+  border-radius: 10px;
+  background: #fcfdfb;
+}
+
+.cult-mat-card--fert {
+  border-left: 4px solid #8d6e63;
+}
+
+.cult-mat-card--pest {
+  border-left: 4px solid #5c6bc0;
+}
+
+.cult-mat-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #e0e0e0;
+}
+
+.cult-mat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.cult-mat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #333;
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+}
+
+.cult-mat-chip--fert {
+  background: #efebe9;
+  border-color: #d7ccc8;
+  color: #4e342e;
+}
+
+.cult-mat-chip--pest {
+  background: #e8eaf6;
+  border-color: #c5cae9;
+  color: #283593;
+}
+
+.cult-work-mats-box {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #e3e8e3;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.cult-work-mats-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.cult-input-with-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cult-input-with-btn .cult-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.cult-npk-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cult-npk-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: #555;
+}
+
+.cult-npk-row .cult-input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px;
+}
+
+.cult-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10095;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.cult-picker-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 95vw);
+  max-height: 86vh;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.28);
+}
+
+.cult-picker-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 16px;
+}
+
+.cult-picker-sub {
+  margin: 4px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #555;
+}
+
+.cult-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cult-picker-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cult-picker-item:hover {
+  border-color: #66bb6a;
+  background: #f1f8e9;
+}
+
+.cult-picker-item b {
+  font-size: 13px;
+  color: #222;
+}
+
+.cult-picker-item span {
+  font-size: 11px;
+  color: #666;
+}
+
+@media (max-width: 768px) {
+  .cult-picker-dialog {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .cult-mat-head {
+    gap: 6px;
+  }
+}

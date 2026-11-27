@@ -1,0 +1,895 @@
+/* 出荷会計記録（shipping-accounting.js） */
+.shipacc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10085;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.56);
+  backdrop-filter: blur(2px);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  color: #1e293b;
+}
+
+.shipacc-modal *,
+.shipacc-modal *::before,
+.shipacc-modal *::after {
+  box-sizing: border-box;
+}
+
+.shipacc-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(980px, 96vw);
+  max-height: 93vh;
+  background: #f8fafc;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.32);
+}
+
+.shipacc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #1b5e20, #2e7d32);
+  color: #fff;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.shipacc-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shipacc-title {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.shipacc-month-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  padding: 3px 6px;
+  border-radius: 10px;
+}
+
+.shipacc-month-btn {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.shipacc-month-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.shipacc-month-label {
+  font-size: 13px;
+  font-weight: 800;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.shipacc-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shipacc-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.shipacc-close:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* KPI サマリー */
+.shipacc-kpi-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px 14px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.shipacc-kpi-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  min-width: 0;
+}
+
+.shipacc-kpi-card.is-sales {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.shipacc-kpi-card.is-expense {
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.shipacc-kpi-card.is-profit {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.shipacc-kpi-card.is-loss {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.shipacc-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shipacc-kpi-val {
+  font-size: 17px;
+  font-weight: 800;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shipacc-kpi-card.is-sales .shipacc-kpi-val { color: #15803d; }
+.shipacc-kpi-card.is-expense .shipacc-kpi-val { color: #c2410c; }
+.shipacc-kpi-card.is-profit .shipacc-kpi-val { color: #1d4ed8; }
+.shipacc-kpi-card.is-loss .shipacc-kpi-val { color: #b91c1c; }
+
+.shipacc-kpi-sub {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* タブ */
+.shipacc-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 10px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.shipacc-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.shipacc-tab {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 0;
+}
+
+.shipacc-tab.active {
+  color: #1b5e20;
+  border-bottom-color: #2e7d32;
+  background: #f0fdf4;
+}
+
+/* ボディ */
+.shipacc-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 14px 22px;
+}
+
+.shipacc-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.shipacc-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.shipacc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.shipacc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.shipacc-field label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.shipacc-input,
+.shipacc-select,
+.shipacc-textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.3;
+  font-family: inherit;
+}
+
+.shipacc-input:focus,
+.shipacc-select:focus,
+.shipacc-textarea:focus {
+  outline: 2px solid #86efac;
+  border-color: #22c55e;
+}
+
+.shipacc-input-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ボタン */
+.shipacc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 13px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.shipacc-btn:hover {
+  background: #f1f5f9;
+}
+
+.shipacc-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.shipacc-btn-primary {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+}
+
+.shipacc-btn-primary:hover {
+  background: #256b29;
+}
+
+.shipacc-btn-orange {
+  background: #ea580c;
+  border-color: #ea580c;
+  color: #fff;
+}
+
+.shipacc-btn-orange:hover {
+  background: #c2410c;
+}
+
+.shipacc-btn-blue {
+  background: #1565c0;
+  border-color: #1565c0;
+  color: #fff;
+}
+
+.shipacc-btn-blue:hover {
+  background: #0d47a1;
+}
+
+.shipacc-btn-danger {
+  background: #fff;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.shipacc-btn-danger:hover {
+  background: #fef2f2;
+}
+
+.shipacc-btn-sm {
+  padding: 5px 9px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+/* チップ */
+.shipacc-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.shipacc-chip {
+  padding: 6px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shipacc-chip.is-active {
+  background: #ea580c;
+  border-color: #ea580c;
+  color: #fff;
+}
+
+.shipacc-chip.is-green.is-active {
+  background: #2e7d32;
+  border-color: #2e7d32;
+  color: #fff;
+}
+
+.shipacc-chip.is-blue.is-active {
+  background: #1565c0;
+  border-color: #1565c0;
+  color: #fff;
+}
+
+/* 伝票入力行 */
+.shipacc-slip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shipacc-slip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) auto minmax(100px, 0.7fr);
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.shipacc-slip-row.has-qty {
+  border-color: #4ade80;
+  background: #f0fdf4;
+}
+
+.shipacc-slip-info {
+  min-width: 0;
+}
+
+.shipacc-slip-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.shipacc-slip-meta {
+  font-size: 12px;
+  color: #475569;
+  margin-top: 2px;
+}
+
+.shipacc-qty-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shipacc-step-btn {
+  width: 34px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.shipacc-step-btn:active {
+  background: #e2e8f0;
+}
+
+.shipacc-qty-input {
+  width: 72px;
+  padding: 6px 6px;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  text-align: right;
+  font-size: 16px;
+  font-weight: 800;
+  background: #fff;
+}
+
+.shipacc-slip-sub {
+  text-align: right;
+  font-size: 14px;
+  font-weight: 800;
+  color: #15803d;
+  white-space: nowrap;
+}
+
+/* 自由入力行 */
+.shipacc-custom-row {
+  border: 1px dashed #86efac;
+  background: #f7fee7;
+  border-radius: 10px;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+/* 合計フッターバー */
+.shipacc-submit-bar {
+  position: sticky;
+  bottom: -12px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.1);
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.shipacc-submit-total {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 700;
+}
+
+.shipacc-submit-total strong {
+  font-size: 20px;
+  color: #15803d;
+  margin-left: 6px;
+}
+
+.shipacc-submit-total.is-expense strong {
+  color: #c2410c;
+}
+
+/* 写真アップローダー */
+.shipacc-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.shipacc-photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shipacc-photo-item {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  background: #f1f5f9;
+}
+
+.shipacc-photo-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  cursor: pointer;
+}
+
+.shipacc-photo-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(15, 23, 42, 0.78);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+/* 履歴・テーブル */
+.shipacc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shipacc-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.shipacc-entry-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.shipacc-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+
+.shipacc-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.shipacc-badge-sale { background: #dcfce7; color: #166534; }
+.shipacc-badge-receipt { background: #ffedd5; color: #9a3412; }
+.shipacc-badge-labor { background: #dbeafe; color: #1e40af; }
+.shipacc-badge-other { background: #f1f5f9; color: #475569; }
+
+.shipacc-entry-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.shipacc-entry-meta {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.shipacc-entry-thumbs {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.shipacc-entry-thumbs img {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid #cbd5e1;
+  cursor: pointer;
+}
+
+.shipacc-entry-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.shipacc-amount {
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.shipacc-amount.is-sale { color: #15803d; }
+.shipacc-amount.is-exp { color: #c2410c; }
+
+.shipacc-entry-btns {
+  display: flex;
+  gap: 4px;
+}
+
+/* 人件費メンバー行 */
+.shipacc-labor-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.shipacc-labor-row.is-checked {
+  border-color: #60a5fa;
+  background: #eff6ff;
+}
+
+.shipacc-labor-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.shipacc-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.shipacc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.shipacc-table th,
+.shipacc-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.shipacc-table th {
+  font-size: 11px;
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.shipacc-table td.is-num,
+.shipacc-table th.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.shipacc-bar-track {
+  width: 80px;
+  height: 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.shipacc-bar-fill {
+  height: 100%;
+  background: #22c55e;
+  border-radius: 999px;
+}
+
+.shipacc-bar-fill.is-exp {
+  background: #f97316;
+}
+
+.shipacc-empty {
+  text-align: center;
+  padding: 20px 12px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.shipacc-note-box {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+/* サブモーダル（編集・写真拡大） */
+.shipacc-submodal {
+  position: fixed;
+  inset: 0;
+  z-index: 10095;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.72);
+  padding: 12px;
+}
+
+.shipacc-subcard {
+  background: #fff;
+  color: #0f172a;
+  width: min(460px, 95vw);
+  max-height: 90vh;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+
+.shipacc-subhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 14px;
+  background: #1e293b;
+  color: #fff;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.shipacc-subbody {
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.shipacc-lightbox-img {
+  max-width: 94vw;
+  max-height: 86vh;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* トースト */
+.shipacc-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 10100;
+  background: #0f172a;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  max-width: 90vw;
+  text-align: center;
+}
+
+.shipacc-toast.is-err {
+  background: #b91c1c;
+}
+
+@media screen and (max-width: 640px) {
+  .shipacc-dialog {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .shipacc-head {
+    padding: 10px 10px;
+    padding-top: calc(10px + env(safe-area-inset-top, 0px));
+  }
+
+  .shipacc-title {
+    font-size: 15px;
+  }
+
+  .shipacc-kpi-bar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .shipacc-kpi-val {
+    font-size: 14px;
+  }
+
+  .shipacc-body {
+    padding: 10px 10px calc(22px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .shipacc-slip-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .shipacc-slip-sub {
+    grid-column: 1 / -1;
+    text-align: right;
+    border-top: 1px dashed #e2e8f0;
+    padding-top: 4px;
+  }
+
+  .shipacc-labor-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .shipacc-labor-controls {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+}

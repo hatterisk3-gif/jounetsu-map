@@ -1534,3 +1534,191 @@ body.map-selecting-mode #clockOutNudgeBanner {
     letter-spacing: -0.5px;
   }
 }
+
+/* ===================================================
+   圃場タップメニュー：栽培歴の作業予定セクション
+   =================================================== */
+.field-menu-cult-wrap {
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+.field-menu-cult-card {
+  background: #f1f8e9;
+  border: 1px solid #c5e1a5;
+  border-radius: 8px;
+  padding: 7px 8px;
+}
+
+.field-menu-cult-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: bold;
+  color: #1b5e20;
+  margin-bottom: 4px;
+}
+
+.field-menu-cult-count {
+  font-size: 10.5px;
+  font-weight: bold;
+  background: #dcedc8;
+  color: #2e7d32;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.field-menu-cult-recs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 5px;
+}
+
+.field-menu-cult-rec {
+  font-size: 11px;
+  color: #33691e;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.field-menu-cult-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 132px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.field-menu-cult-item {
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #aed581;
+  border-radius: 6px;
+  padding: 6px 7px;
+  cursor: pointer;
+  box-sizing: border-box;
+  display: block;
+  font-family: inherit;
+  transition: background 0.15s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.field-menu-cult-item:active {
+  transform: scale(0.985);
+  background: #f9fbe7;
+}
+
+.field-menu-cult-item-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field-menu-cult-cat {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.field-menu-cult-name {
+  font-size: 12px;
+  font-weight: bold;
+  color: #212121;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-menu-cult-rel {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.field-menu-cult-rel--overdue {
+  background: #ffebee;
+  color: #c62828;
+}
+
+.field-menu-cult-rel--today {
+  background: #fff3e0;
+  color: #e65100;
+}
+
+.field-menu-cult-rel--soon {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.field-menu-cult-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: #555;
+  line-height: 1.3;
+}
+
+.field-menu-cult-go {
+  color: #2e7d32;
+  font-weight: bold;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.field-menu-cult-mats {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #4e342e;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.field-menu-cult-empty {
+  font-size: 11px;
+  color: #689f38;
+  background: rgba(255, 255, 255, 0.75);
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .field-menu-cult-card {
+    padding: 6px 7px;
+  }
+
+  .field-menu-cult-list {
+    max-height: 118px;
+  }
+
+  .field-menu-cult-name {
+    font-size: 11.5px;
+  }
+}
+
+@media (max-width: 360px) {
+  .field-menu-cult-list {
+    max-height: 104px;
+  }
+
+  .field-menu-cult-item {
+    padding: 5px 6px;
+  }
+}

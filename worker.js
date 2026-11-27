@@ -1966,6 +1966,17 @@ function renderInitData(data) {
   pdlSymptoms = data.pdl.symptoms || [];
   pdlNurseryLocations = data.pdl.nurseryLocations || [];
   pdlCropCultSettings = data.pdl.cropCultSettings || [];
+  if (Array.isArray(data.pdl.cultivationRecords)) {
+    window.pdlCultivationRecords = data.pdl.cultivationRecords;
+    window._cultFieldSchedLastFetchAt = Date.now();
+  } else if (!Array.isArray(window.pdlCultivationRecords)) {
+    window.pdlCultivationRecords = [];
+  }
+  if (Array.isArray(data.pdl.cultivationSchedules)) {
+    window.pdlCultivationSchedules = data.pdl.cultivationSchedules;
+  } else if (!Array.isArray(window.pdlCultivationSchedules)) {
+    window.pdlCultivationSchedules = [];
+  }
   pdlInspections = data.pdl.inspections || [];
   window.pdlInspections = pdlInspections;
   if (typeof window.updateWorkerPeriodicInspectionAlertBadge_ === 'function') {
@@ -2635,7 +2646,7 @@ async function fetchWeatherAndUpdateUI(options) {
     : { lat: lat, lng: lng, placeId: placeId, refreshModal: false, isolate: false };
 
   try {
-    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,sunshine_duration,wind_speed_10m_max&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
+    let forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current_weather=true&current=temperature_2m,relative_humidity_2m,pressure_msl,weather_code,wind_speed_10m,wind_direction_10m,precipitation&past_days=31&forecast_days=16&hourly=temperature_2m,precipitation,precipitation_probability,relative_humidity_2m,wind_speed_10m,wind_direction_10m,pressure_msl,weathercode&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunshine_duration,wind_speed_10m_max,sunrise,sunset&wind_speed_unit=ms&timezone=Asia%2FTokyo`;
 
     let today = new Date();
     let formatYMD = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
@@ -4012,6 +4023,237 @@ window.openFieldWorkRecordSelect = (id) => {
   }
 };
 
+function escapeFieldMenuHtml_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeFieldMenuJs_(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function fieldMenuTodayYmd_() {
+  const d = new Date(Date.now() + 9 * 3600000);
+  return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2);
+}
+
+function fieldMenuDiffDays_(ymdA, ymdB) {
+  const ma = String(ymdA || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const mb = String(ymdB || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!ma || !mb) return NaN;
+  const ta = Date.UTC(Number(ma[1]), Number(ma[2]) - 1, Number(ma[3]));
+  const tb = Date.UTC(Number(mb[1]), Number(mb[2]) - 1, Number(mb[3]));
+  return Math.round((tb - ta) / 86400000);
+}
+
+function fieldMenuFormatMdDow_(ymd) {
+  const m = String(ymd || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  const dows = ['日', '月', '火', '水', '木', '金', '土'];
+  return Number(m[2]) + '/' + Number(m[3]) + '(' + dows[d.getUTCDay()] + ')';
+}
+
+window.getFieldCultivationSchedulesData_ = (polyId) => {
+  const pid = String(polyId || '');
+  const allRecords = Array.isArray(window.pdlCultivationRecords) ? window.pdlCultivationRecords : [];
+  const allSchedules = Array.isArray(window.pdlCultivationSchedules) ? window.pdlCultivationSchedules : [];
+  const records = allRecords.filter(r =>
+    r && r.status !== 'finished' && r.fieldId && r.plantDate && r.cropName && String(r.fieldId) === pid
+  );
+  if (!records.length) return { records: [], tasks: [] };
+  const recIds = new Set(records.map(r => String(r.id)));
+  const tasks = allSchedules.filter(t => t && recIds.has(String(t.recordId || ''))).slice().sort((a, b) => {
+    const pa = a.plannedDate || '9999-99-99';
+    const pb = b.plannedDate || '9999-99-99';
+    if (pa !== pb) return pa < pb ? -1 : 1;
+    const da = a.dueDate || '9999-99-99';
+    const db = b.dueDate || '9999-99-99';
+    return da < db ? -1 : (da > db ? 1 : 0);
+  });
+  return { records, tasks };
+};
+
+window.buildFieldMenuCultivationHtml_ = (polyId) => {
+  const data = window.getFieldCultivationSchedulesData_(polyId);
+  const records = data.records;
+  const tasks = data.tasks;
+  if (!records.length) return '';
+
+  const today = fieldMenuTodayYmd_();
+  const catMetaMap = {
+    prep: { label: '圃場準備', bg: '#efebe9', color: '#6d4c41' },
+    care: { label: '栽培管理', bg: '#e8f5e9', color: '#2e7d32' },
+    harvest: { label: '収穫', bg: '#fff3e0', color: '#e65100' }
+  };
+
+  const recLines = records.map(r => {
+    const anchorShort = r.anchorLabel === 'sowing' ? '播種' : '定植';
+    const m = String(r.plantDate || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const md = m ? (Number(m[2]) + '/' + Number(m[3])) : r.plantDate;
+    const diff = fieldMenuDiffDays_(r.plantDate, today);
+    let dapText = '';
+    if (isFinite(diff)) {
+      if (diff === 0) dapText = anchorShort + '当日';
+      else if (diff > 0) dapText = anchorShort + '後' + diff + '日';
+      else dapText = anchorShort + 'まで' + (-diff) + '日';
+    }
+    const cropTitle = escapeFieldMenuHtml_(r.cropName) + (r.variety ? '（' + escapeFieldMenuHtml_(r.variety) + '）' : '');
+    return '<div class="field-menu-cult-rec">🌱 <b>' + cropTitle + '</b>・' + anchorShort + ' ' + escapeFieldMenuHtml_(md) +
+      (dapText ? '（' + escapeFieldMenuHtml_(dapText) + '）' : '') + '</div>';
+  }).join('');
+
+  const jsPolyId = escapeFieldMenuJs_(polyId);
+  let listHtml = '';
+  if (tasks.length) {
+    listHtml = '<div class="field-menu-cult-list">' + tasks.map(t => {
+      const cat = catMetaMap[t.category] || catMetaMap.care;
+      const ds = fieldMenuDiffDays_(today, t.plannedDate);
+      const de = fieldMenuDiffDays_(today, t.dueDate || t.plannedDate);
+      let relHtml = '';
+      if (isFinite(de) && de < 0) {
+        relHtml = '<span class="field-menu-cult-rel field-menu-cult-rel--overdue">' + (-de) + '日遅れ</span>';
+      } else if (isFinite(ds) && ds <= 0) {
+        relHtml = '<span class="field-menu-cult-rel field-menu-cult-rel--today">今日</span>';
+      } else if (isFinite(ds)) {
+        relHtml = '<span class="field-menu-cult-rel field-menu-cult-rel--soon">あと' + ds + '日</span>';
+      }
+      const startStr = fieldMenuFormatMdDow_(t.plannedDate);
+      const endStr = (t.dueDate && t.dueDate !== t.plannedDate) ? ('〜' + fieldMenuFormatMdDow_(t.dueDate)) : '';
+      const dateStr = startStr ? (startStr + endStr) : '-';
+      const cropNote = records.length > 1 && t.cropName ? (' · ' + escapeFieldMenuHtml_(t.cropName)) : '';
+      const matHtml = t.materialsText ? ('<div class="field-menu-cult-mats">' + escapeFieldMenuHtml_(t.materialsText) + '</div>') : '';
+      const jsSchedId = escapeFieldMenuJs_(t.id);
+      return '<button type="button" class="field-menu-cult-item" onclick="openWorkRecordFromFieldSchedule_(\'' + jsPolyId + '\', \'' + jsSchedId + '\')">' +
+        '<div class="field-menu-cult-item-top">' +
+        '<span class="field-menu-cult-cat" style="background:' + cat.bg + ';color:' + cat.color + ';">' + cat.label + '</span>' +
+        '<span class="field-menu-cult-name">' + escapeFieldMenuHtml_(t.workName || '作業') + '</span>' +
+        relHtml +
+        '</div>' +
+        '<div class="field-menu-cult-meta">' +
+        '<span>' + escapeFieldMenuHtml_(dateStr) + cropNote + '</span>' +
+        '<span class="field-menu-cult-go">記録 ›</span>' +
+        '</div>' +
+        matHtml +
+        '</button>';
+    }).join('') + '</div>';
+  } else {
+    listHtml = '<div class="field-menu-cult-empty">予定中の作業はありません</div>';
+  }
+
+  const countLabel = tasks.length ? (tasks.length + '件') : '予定なし';
+  return '<div class="field-menu-cult-card">' +
+    '<div class="field-menu-cult-head">' +
+    '<span>📅 作業予定</span>' +
+    '<span class="field-menu-cult-count">' + countLabel + '</span>' +
+    '</div>' +
+    '<div class="field-menu-cult-recs">' + recLines + '</div>' +
+    listHtml +
+    '</div>';
+};
+
+window.refreshFieldMenuCultivationSchedules_ = async (polyId, force) => {
+  const pid = String(polyId || '');
+  if (!pid) return;
+  if (!force && (Date.now() - (window._cultFieldSchedLastFetchAt || 0)) < 45000) return;
+  if (window._cultFieldSchedInFlight) return window._cultFieldSchedInFlight;
+  const p = (async () => {
+    try {
+      const res = await callGAS('getCultivationFieldSchedules', {}, 1, { timeoutMs: 15000 });
+      if (res && Array.isArray(res.records)) {
+        window.pdlCultivationRecords = res.records;
+        window.pdlCultivationSchedules = Array.isArray(res.schedules) ? res.schedules : [];
+        window._cultFieldSchedLastFetchAt = Date.now();
+        if (window._activeMainMenuFieldId === pid) {
+          const wrap = document.getElementById('fieldMenuCultSchedWrap');
+          if (wrap && String(wrap.getAttribute('data-field-id') || '') === pid) {
+            const html = window.buildFieldMenuCultivationHtml_(pid);
+            const nextDisplay = html ? '' : 'none';
+            if (wrap._lastRenderedHtml !== html) {
+              wrap.innerHTML = html;
+              wrap._lastRenderedHtml = html;
+            }
+            if (wrap.style.display !== nextDisplay) wrap.style.display = nextDisplay;
+          }
+        }
+      }
+    } catch (e) { }
+  })();
+  window._cultFieldSchedInFlight = p;
+  try {
+    await p;
+  } finally {
+    if (window._cultFieldSchedInFlight === p) window._cultFieldSchedInFlight = null;
+  }
+};
+
+window.openWorkRecordFromFieldSchedule_ = (polyId, schedId) => {
+  const pid = String(polyId || '');
+  const list = Array.isArray(window.pdlCultivationSchedules) ? window.pdlCultivationSchedules : [];
+  const t = list.find(s => s && String(s.id) === String(schedId || '')) || null;
+  if (typeof infoWindow !== 'undefined' && infoWindow) {
+    try { infoWindow.close(); } catch (e) { }
+  }
+  selectedPolyIds = pid ? [pid] : [];
+  if (typeof window.directOpenForm === 'function') {
+    window.directOpenForm(pid, 'work');
+  } else if (typeof directOpenForm === 'function') {
+    directOpenForm(pid, 'work');
+  }
+  setTimeout(() => {
+    if (pid) {
+      selectedPolyIds = [pid];
+      if (typeof window.updateSelectedPolysDisplay === 'function') window.updateSelectedPolysDisplay();
+      if (typeof window.refreshFieldTargetUI === 'function') window.refreshFieldTargetUI();
+    }
+    if (!t) return;
+    const dept = String(t.dept || '').trim();
+    const cats = (typeof pdlWorkCategories !== 'undefined' && Array.isArray(pdlWorkCategories)) ? pdlWorkCategories : [];
+    if (dept && cats.indexOf(dept) >= 0 && typeof window.selectWorkCategory === 'function') {
+      const catInput = document.getElementById('rec_work_category');
+      if (!catInput || catInput.value !== dept) window.selectWorkCategory(dept);
+    }
+    const crop = String(t.cropName || '').trim();
+    if (crop) {
+      const cropKey = (typeof window.normalizeWorkCropKey === 'function') ? window.normalizeWorkCropKey(crop) : crop;
+      if (typeof window.applyWorkCropFilterSelection_ === 'function') {
+        window.applyWorkCropFilterSelection_([cropKey]);
+      } else if (typeof window.ensureWorkCropFilterSelected === 'function') {
+        window.ensureWorkCropFilterSelected(cropKey);
+      } else if (typeof window.selectWorkCropFilter === 'function') {
+        window.selectWorkCropFilter(cropKey);
+      }
+    }
+    let workName = String(t.workName || '').trim();
+    if (workName) {
+      const masters = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) ? pdlWorkMaster : [];
+      const exact = masters.find(w => String(w.name || '').trim() === workName);
+      if (!exact) {
+        const stripped = workName.replace(/(（\d+回目）|\(\d+回目\))$/, '').trim();
+        if (stripped && masters.some(w => String(w.name || '').trim() === stripped)) {
+          workName = stripped;
+        }
+      }
+      if (typeof window.selectWorkChip === 'function') {
+        window.selectWorkChip(workName);
+      } else {
+        const sel = document.getElementById('rec_work_name');
+        if (sel) sel.value = workName;
+      }
+    }
+    if (typeof window.refreshWorkRecordStepUI_ === 'function') {
+      try { window.refreshWorkRecordStepUI_(); } catch (eStep) { }
+    }
+    if (typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast('📅 「' + String(t.workName || '') + '」をセットしました', 'ok');
+    }
+  }, 130);
+};
+
 window.openMainMenu = (id) => {
   const p = loadedPolygons[id];
   if (!p) return;
@@ -4027,8 +4269,12 @@ window.openMainMenu = (id) => {
   let bodyHtml = '';
 
   if (!p.isMarker && !isWorker2) {
-    // 圃場の場合：2列×3行のグリッド配置（端末サイズに応じてCSSで自動調整）
+    window._activeMainMenuFieldId = String(id);
+    const cultSchedHtml = window.buildFieldMenuCultivationHtml_(id);
+    const cultSchedWrap = `<div id="fieldMenuCultSchedWrap" data-field-id="${escapeFieldMenuHtml_(id)}" class="field-menu-cult-wrap" style="${cultSchedHtml ? '' : 'display:none;'}">${cultSchedHtml}</div>`;
+    // 圃場の場合：栽培歴作業予定（あれば）＋2列×3行のグリッド配置（端末サイズに応じてCSSで自動調整）
     bodyHtml = `
+            ${cultSchedWrap}
             <div class="field-infowindow-grid">
               <button type="button" class="field-infowindow-btn" onclick="executeNavigation('${id}')" style="background:#4285F4;">🚗 ナビ開始</button>
               <button type="button" class="field-infowindow-btn" onclick="actionManagePhotos('${id}', 'growth')" style="background:#4CAF50;">🌱 生育記録 (${growthCount})</button>
@@ -4037,7 +4283,9 @@ window.openMainMenu = (id) => {
               <button type="button" class="field-infowindow-btn" onclick="openFertilizerCalcModal('${id}')" style="background:#6D4C41;">🧪 肥料量計算</button>
               <button type="button" class="field-infowindow-btn" onclick="directOpenReportForm('${id}')" style="background:#d32f2f;">⚠️ 問題を報告</button>
             </div>`;
+    setTimeout(() => { window.refreshFieldMenuCultivationSchedules_(id, false); }, 0);
   } else {
+    window._activeMainMenuFieldId = '';
     // 看板マーカーまたは worker2 の場合
     const navBtn = `<button type="button" onclick="executeNavigation('${id}')" class="field-infowindow-btn-single" style="margin-bottom:6px; background:#4285F4;">🚗 ナビ開始</button>`;
     let actions = `<div class="field-infowindow-actions-list">`;
@@ -4501,6 +4749,7 @@ window.fieldPhotoAnalysisState = null;
 
 const FIELD_PHOTO_MAX_AI_PHOTOS_ = 6;
 const FIELD_PHOTO_ANALYSIS_TYPES_ = [
+  { id: 'work_instruction', label: '📋 AI作業判断・指示', desc: '写真・作業履歴から必要な作業を判断し指示を作成' },
   { id: 'general', label: '🔬 総合診断', desc: '生育・栄養・病害虫・環境を総合的に確認' },
   { id: 'pest_disease', label: '🐛 病害虫・異常', desc: '病斑・害虫・生理障害や欠乏症の原因を特定' },
   { id: 'growth_compare', label: '📈 生育・変化比較', desc: '複数枚の写真から生育差や時系列変化を比較' },
@@ -4793,11 +5042,51 @@ window.getFieldPhotoAnalysisTypeLabel_ = (typeId) => {
   return found ? found.label : '🔬 総合診断';
 };
 
+window.getFieldPhotoWorkDecisionStyle_ = (decision) => {
+  const d = String(decision || '').trim();
+  if (d === '即時対応') return { bg: '#FFEBEE', color: '#B71C1C', border: '#EF9A9A', icon: '🚨' };
+  if (d === '計画対応') return { bg: '#FFF3E0', color: '#E65100', border: '#FFCC80', icon: '📅' };
+  if (d === '作業不要') return { bg: '#E8F5E9', color: '#2E7D32', border: '#A5D6A7', icon: '👌' };
+  return { bg: '#EDE7F6', color: '#4527A0', border: '#B39DDB', icon: '👀' };
+};
+
+function normalizeYmdFieldPhoto_(val) {
+  const s = String(val || '').trim().replace(/\//g, '-');
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+
+function getTodayJstYmd_() {
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatAiWorkInstructionNote_(ins) {
+  if (!ins || typeof ins !== 'object') return '';
+  const parts = [];
+  if (ins.title && ins.title !== ins.workName) parts.push(`【指示】${ins.title}`);
+  if (ins.targetArea) parts.push(`場所: ${ins.targetArea}`);
+  if (ins.reason) parts.push(`理由: ${ins.reason}`);
+  if (Array.isArray(ins.steps) && ins.steps.length) {
+    parts.push('手順: ' + ins.steps.map((s, i) => `${i + 1}.${s}`).join(' / '));
+  }
+  if (Array.isArray(ins.materials) && ins.materials.length) {
+    parts.push('資材: ' + ins.materials.join('、'));
+  }
+  if (ins.caution) parts.push(`注意: ${ins.caution}`);
+  return parts.join('\n');
+}
+
 window.normalizeFieldPhotoAnalysisResult_ = (raw) => {
   const src = (raw && typeof raw === 'object') ? raw : {};
   const sevRaw = String(src.severity || '').trim();
   const severity = ['良好', '経過観察', '注意', '要対応'].includes(sevRaw) ? sevRaw : '経過観察';
   const normLevel = (v) => (['高', '中', '低'].includes(String(v || '').trim()) ? String(v).trim() : '中');
+  const decRaw = String(src.workDecision || '').trim();
+  const fallbackDec = severity === '要対応' ? '即時対応' : (severity === '注意' ? '計画対応' : (severity === '良好' ? '作業不要' : '経過観察'));
+  const workDecision = ['即時対応', '計画対応', '経過観察', '作業不要'].includes(decRaw) ? decRaw : fallbackDec;
   const observations = Array.isArray(src.observations)
     ? src.observations
       .filter(x => x && typeof x === 'object')
@@ -4827,6 +5116,39 @@ window.normalizeFieldPhotoAnalysisResult_ = (raw) => {
       }))
       .filter(x => x.action || x.detail)
     : [];
+  const workInstructions = Array.isArray(src.workInstructions)
+    ? src.workInstructions
+      .filter(x => x && typeof x === 'object')
+      .map(x => {
+        const priority = normLevel(x.priority);
+        const urgRaw = String(x.urgency || '').trim();
+        const fallbackUrg = priority === '高' ? '今日中' : (priority === '低' ? '1週間以内' : '3日以内');
+        const urgency = ['今日中', '3日以内', '1週間以内', '経過観察後'].includes(urgRaw) ? urgRaw : fallbackUrg;
+        const workName = String(x.workName || '').trim();
+        const title = String(x.title || '').trim();
+        return {
+          workName: workName || title,
+          title: title || workName,
+          priority,
+          urgency,
+          suggestedDate: normalizeYmdFieldPhoto_(x.suggestedDate),
+          deadlineDate: normalizeYmdFieldPhoto_(x.deadlineDate),
+          estimatedHours: String(x.estimatedHours || '').trim(),
+          cropName: String(x.cropName || '').trim(),
+          targetArea: String(x.targetArea || '').trim(),
+          reason: String(x.reason || '').trim(),
+          steps: Array.isArray(x.steps) ? x.steps.map(s => String(s || '').trim()).filter(Boolean) : [],
+          materials: Array.isArray(x.materials) ? x.materials.map(m => String(m || '').trim()).filter(Boolean) : [],
+          caution: String(x.caution || '').trim(),
+          registeredAt: String(x.registeredAt || '').trim(),
+          registeredScheduleId: String(x.registeredScheduleId || '').trim(),
+          registeredAssignee: String(x.registeredAssignee || '').trim(),
+          registeredDate: String(x.registeredDate || '').trim(),
+          registeredDeadline: String(x.registeredDeadline || '').trim()
+        };
+      })
+      .filter(x => x.workName || x.title)
+    : [];
   const checkPoints = Array.isArray(src.checkPoints)
     ? src.checkPoints.map(x => String(x || '').trim()).filter(Boolean)
     : [];
@@ -4834,10 +5156,12 @@ window.normalizeFieldPhotoAnalysisResult_ = (raw) => {
     title: String(src.title || '圃場写真AI診断').trim(),
     summary: String(src.summary || '').trim(),
     severity,
+    workDecision,
     cropGuessed: String(src.cropGuessed || '').trim(),
     observations,
     possibleCauses,
     recommendedActions,
+    workInstructions,
     checkPoints,
     followUpNote: String(src.followUpNote || '').trim(),
     analyzedAt: String(src.analyzedAt || '').trim(),
@@ -4851,7 +5175,7 @@ window.formatFieldPhotoAnalysisPlainText_ = (analysis, meta) => {
   const lines = [];
   if (m.fieldName) lines.push(`【圃場】${m.fieldName}`);
   lines.push(`【診断タイトル】${a.title}`);
-  lines.push(`【判定】${a.severity}${a.cropGuessed ? ` / 作物: ${a.cropGuessed}` : ''}`);
+  lines.push(`【判定】${a.severity} / 作業判断: ${a.workDecision}${a.cropGuessed ? ` / 作物: ${a.cropGuessed}` : ''}`);
   if (m.analysisType) lines.push(`【分析種別】${window.getFieldPhotoAnalysisTypeLabel_(m.analysisType)}`);
   if (a.analyzedAt) lines.push(`【分析日時】${a.analyzedAt}`);
   if (m.userQuestion) lines.push(`【質問・観点】${m.userQuestion}`);
@@ -4859,6 +5183,19 @@ window.formatFieldPhotoAnalysisPlainText_ = (analysis, meta) => {
   if (a.summary) {
     lines.push('■ 総合所見');
     lines.push(a.summary);
+    lines.push('');
+  }
+  if (a.workInstructions.length) {
+    lines.push('■ AIからの作業指示');
+    a.workInstructions.forEach((ins, idx) => {
+      const dateStr = [ins.suggestedDate, ins.deadlineDate].filter(Boolean).join('〜');
+      lines.push(`${idx + 1}. [優先度:${ins.priority} / ${ins.urgency}] ${ins.workName}${ins.title && ins.title !== ins.workName ? `（${ins.title}）` : ''}${dateStr ? ` [${dateStr}]` : ''}`);
+      if (ins.targetArea) lines.push(`   対象: ${ins.targetArea}`);
+      if (ins.reason) lines.push(`   理由: ${ins.reason}`);
+      if (ins.steps.length) lines.push(`   手順: ${ins.steps.map((s, si) => `${si + 1}.${s}`).join(' / ')}`);
+      if (ins.materials.length) lines.push(`   資材: ${ins.materials.join('、')}`);
+      if (ins.caution) lines.push(`   注意: ${ins.caution}`);
+    });
     lines.push('');
   }
   if (a.observations.length) {
@@ -4932,11 +5269,24 @@ function copyFieldPhotoTextToClipboard_(text) {
   }
 }
 
-window.buildFieldPhotoAnalysisResultHtml_ = (analysis, analyzedPhotos) => {
+window.buildFieldPhotoAnalysisResultHtml_ = (analysis, analyzedPhotos, opts) => {
   const a = window.normalizeFieldPhotoAnalysisResult_(analysis);
   const sev = window.getFieldPhotoSeverityStyle_(a.severity);
+  const dec = window.getFieldPhotoWorkDecisionStyle_(a.workDecision);
   const esc = escapeHtmlFieldPhoto_;
   const photos = Array.isArray(analyzedPhotos) ? analyzedPhotos : [];
+  const o = (opts && typeof opts === 'object') ? opts : {};
+  const mode = o.mode === 'saved' ? 'saved' : 'current';
+  const polyId = String(o.polyId || activePolyId || '');
+  const recordId = String(o.recordId || '');
+  const jsPid = escapeJsSingleFieldPhoto_(polyId);
+  const jsRecId = escapeJsSingleFieldPhoto_(recordId);
+  const p = loadedPolygons[polyId] || null;
+  const fieldCtx = getFieldContextForAiAnalysis_(p);
+  const defaultCrop = a.cropGuessed || fieldCtx.crop || '';
+  const todayYmd = getTodayJstYmd_();
+  const workNamesList = getFieldWorkMasterNames_();
+  const staffNamesList = getFieldStaffNamesForAi_(p);
 
   const levelBadge = (lvl, prefix) => {
     const l = String(lvl || '中');
@@ -4955,6 +5305,9 @@ window.buildFieldPhotoAnalysisResultHtml_ = (analysis, analyzedPhotos) => {
           <span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:14px; background:${sev.bg}; color:${sev.color}; border:1px solid ${sev.border};">
             ${sev.icon} 状態: ${esc(a.severity)}
           </span>
+          <span style="display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:bold; padding:4px 10px; border-radius:14px; background:${dec.bg}; color:${dec.color}; border:1px solid ${dec.border};">
+            ${dec.icon} 作業判断: ${esc(a.workDecision)}
+          </span>
           ${a.cropGuessed ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; padding:3px 9px; border-radius:12px; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7;">🌱 ${esc(a.cropGuessed)}</span>` : ''}
         </div>
         ${a.analyzedAt ? `<span style="font-size:11px; color:#777;">🕒 ${esc(a.analyzedAt)}</span>` : ''}
@@ -4968,6 +5321,149 @@ window.buildFieldPhotoAnalysisResultHtml_ = (analysis, analyzedPhotos) => {
         </div>
       ` : ''}
   `;
+
+  // AI作業指示セクション
+  const unregisteredCount = a.workInstructions.filter(ins => !ins.registeredAt).length;
+  const registeredCount = a.workInstructions.length - unregisteredCount;
+  html += `
+    <div style="margin-bottom:14px; background:linear-gradient(180deg, #F8F5FF 0%, #FFFFFF 100%); border:2px solid #B39DDB; border-radius:12px; padding:12px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;">
+        <div style="font-size:13px; font-weight:bold; color:#4527A0;">📋 AIからの作業指示 (${a.workInstructions.length}件)</div>
+        ${registeredCount > 0 ? `<span style="font-size:11px; font-weight:bold; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:10px; padding:2px 8px;">✅ ${registeredCount}件 予定登録済</span>` : ''}
+      </div>
+      <datalist id="field_photo_ai_work_datalist">
+        ${workNamesList.map(n => `<option value="${esc(n)}"></option>`).join('')}
+      </datalist>
+      <datalist id="field_photo_ai_staff_datalist">
+        ${staffNamesList.map(n => `<option value="${esc(n)}"></option>`).join('')}
+      </datalist>
+  `;
+
+  if (a.workInstructions.length === 0) {
+    html += `
+      <div style="background:#E8F5E9; border:1px solid #C8E6C9; border-radius:8px; padding:10px 12px; font-size:12px; color:#1B5E20; line-height:1.5;">
+        ✅ 現時点で追加の緊急作業は不要と判断されました。下の「現地確認ポイント」「経過観察の目安」を参考に様子を見てください。
+      </div>
+    `;
+  } else {
+    html += `<div style="display:flex; flex-direction:column; gap:10px;">`;
+    a.workInstructions.forEach((ins, idx) => {
+      const isReg = !!ins.registeredAt;
+      const defaultChecked = !isReg && (a.workInstructions.length === 1 || ins.priority !== '低');
+      const sugDate = ins.suggestedDate || todayYmd;
+      const ddlDate = ins.deadlineDate || sugDate;
+      const notePrefill = formatAiWorkInstructionNote_(ins);
+      const urgStyle = ins.urgency === '今日中'
+        ? 'background:#FFEBEE; color:#C62828; border:1px solid #EF9A9A;'
+        : (ins.urgency === '3日以内'
+          ? 'background:#FFF3E0; color:#E65100; border:1px solid #FFCC80;'
+          : 'background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9;');
+      html += `
+        <div style="background:${isReg ? '#F1F8E9' : '#fff'}; border:1.5px solid ${isReg ? '#81C784' : '#D1C4E9'}; border-radius:10px; padding:10px 11px;">
+          <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:6px;">
+            <label style="display:flex; align-items:flex-start; gap:7px; cursor:${isReg ? 'default' : 'pointer'}; flex:1; min-width:0;">
+              <input type="checkbox" id="fpai_wi_${idx}_check" ${defaultChecked ? 'checked' : ''} ${isReg ? 'disabled' : ''} style="margin-top:3px; width:17px; height:17px; accent-color:#5E35B1; flex-shrink:0;">
+              <div style="min-width:0; flex:1;">
+                <div style="font-size:13.5px; font-weight:bold; color:#311B92; line-height:1.35;">${esc(ins.title || ins.workName)}</div>
+                ${ins.workName && ins.title && ins.workName !== ins.title ? `<div style="font-size:11px; color:#5E35B1; margin-top:2px;">作業名候補: ${esc(ins.workName)}</div>` : ''}
+              </div>
+            </label>
+            <div style="display:flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; flex-shrink:0;">
+              ${levelBadge(ins.priority, '優先度: ')}
+              <span style="display:inline-flex; align-items:center; font-size:10px; font-weight:bold; padding:2px 7px; border-radius:10px; ${urgStyle}">⏰ ${esc(ins.urgency)}</span>
+            </div>
+          </div>
+
+          ${isReg ? `
+            <div style="background:#E8F5E9; border:1px solid #A5D6A7; border-radius:6px; padding:6px 9px; font-size:11.5px; font-weight:bold; color:#1B5E20; margin-bottom:6px;">
+              ✅ 作業予定へ登録済み${ins.registeredDate ? `（予定日: ${esc(ins.registeredDate)}${ins.registeredDeadline ? ` 〜 期限: ${esc(ins.registeredDeadline)}` : ''}）` : ''}${ins.registeredAssignee ? ` ／ 担当: ${esc(ins.registeredAssignee)}` : ''}
+            </div>
+          ` : ''}
+
+          ${ins.targetArea ? `<div style="font-size:11.5px; color:#37474F; margin-bottom:4px;"><b>📍 対象箇所:</b> ${esc(ins.targetArea)}</div>` : ''}
+          ${ins.reason ? `<div style="font-size:12px; color:#333; line-height:1.45; margin-bottom:6px;"><b>💡 判断根拠:</b> ${esc(ins.reason)}</div>` : ''}
+
+          ${ins.steps.length ? `
+            <div style="background:#FAFBFD; border:1px solid #E3E8EF; border-radius:6px; padding:7px 9px; margin-bottom:6px;">
+              <div style="font-size:11px; font-weight:bold; color:#3949AB; margin-bottom:3px;">📝 実施手順</div>
+              <ol style="margin:0; padding-left:18px; font-size:12px; color:#222; line-height:1.5;">
+                ${ins.steps.map(s => `<li>${esc(s)}</li>`).join('')}
+              </ol>
+            </div>
+          ` : ''}
+
+          ${ins.materials.length ? `
+            <div style="display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-bottom:6px;">
+              <span style="font-size:11px; font-weight:bold; color:#4E342E;">🧰 必要資材:</span>
+              ${ins.materials.map(m => `<span style="font-size:11px; background:#EFEBE9; color:#4E342E; border:1px solid #D7CCC8; border-radius:10px; padding:1px 8px;">${esc(m)}</span>`).join('')}
+            </div>
+          ` : ''}
+
+          ${ins.caution ? `
+            <div style="background:#FFF8E1; border:1px solid #FFE082; border-radius:6px; padding:6px 8px; font-size:11.5px; color:#E65100; line-height:1.45; margin-bottom:6px;">
+              ⚠️ ${esc(ins.caution)}
+            </div>
+          ` : ''}
+
+          ${!isReg ? `
+            <div style="background:#F8F9FB; border:1px solid #E0E4EA; border-radius:8px; padding:8px; margin-top:6px;">
+              <div style="font-size:11px; font-weight:bold; color:#455A64; margin-bottom:6px;">📅 作業予定登録の内容（編集できます）</div>
+              <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:6px; margin-bottom:6px;">
+                <div>
+                  <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">作業名 <span style="color:#c62828;">*</span></label>
+                  <input type="text" id="fpai_wi_${idx}_work" list="field_photo_ai_work_datalist" value="${esc(ins.workName || ins.title)}" class="form-input" style="margin:0; padding:6px 8px; font-size:12px; font-weight:bold;">
+                </div>
+                <div>
+                  <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">作物名</label>
+                  <input type="text" id="fpai_wi_${idx}_crop" value="${esc(ins.cropName || defaultCrop)}" class="form-input" style="margin:0; padding:6px 8px; font-size:12px;">
+                </div>
+                <div>
+                  <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">担当者（カンマ区切り可）</label>
+                  <input type="text" id="fpai_wi_${idx}_person" list="field_photo_ai_staff_datalist" value="" placeholder="未指定" class="form-input" style="margin:0; padding:6px 8px; font-size:12px;">
+                </div>
+                <div>
+                  <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">目安時間 (h)</label>
+                  <input type="text" id="fpai_wi_${idx}_hours" value="${esc(ins.estimatedHours)}" placeholder="例: 1" class="form-input" style="margin:0; padding:6px 8px; font-size:12px;">
+                </div>
+                <div>
+                  <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">予定日</label>
+                  <input type="date" id="fpai_wi_${idx}_date" value="${esc(sugDate)}" class="form-input" style="margin:0; padding:5px 7px; font-size:12px;">
+                </div>
+                <div>
+                  <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">期限日</label>
+                  <input type="date" id="fpai_wi_${idx}_deadline" value="${esc(ddlDate)}" class="form-input" style="margin:0; padding:5px 7px; font-size:12px;">
+                </div>
+              </div>
+              <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">指示メモ（作業予定に表示）</label>
+              <textarea id="fpai_wi_${idx}_notes" rows="2" class="form-input" style="margin:0; padding:6px 8px; font-size:11.5px; line-height:1.45; resize:vertical;">${esc(notePrefill)}</textarea>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    });
+    html += `</div>`;
+  }
+
+  if (polyId && (unregisteredCount > 0 || registeredCount > 0)) {
+    html += `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;">`;
+    if (unregisteredCount > 0) {
+      html += `
+        <button type="button" id="fpaiRegisterScheduleBtn" onclick="registerFieldPhotoAiWorkInstructions_('${mode}', '${jsRecId}', '${jsPid}')" style="flex:1; min-width:180px; background:linear-gradient(135deg, #5E35B1 0%, #3949AB 100%); color:#fff; border:none; border-radius:8px; padding:11px 12px; font-size:13.5px; font-weight:bold; cursor:pointer; box-shadow:0 2px 5px rgba(94,53,177,0.3);">
+          📅 チェックした指示を作業予定へ登録
+        </button>
+      `;
+    }
+    if (registeredCount > 0) {
+      html += `
+        <button type="button" onclick="openScheduleList()" style="background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:8px; padding:10px 12px; font-size:12.5px; font-weight:bold; cursor:pointer;">
+          📅 作業予定一覧を見る
+        </button>
+      `;
+    }
+    html += `</div>`;
+  }
+
+  html += `</div>`;
 
   if (a.observations.length) {
     html += `
@@ -5055,11 +5551,159 @@ window.buildFieldPhotoAnalysisResultHtml_ = (analysis, analyzedPhotos) => {
 
   html += `
       <div style="font-size:11px; color:#666; background:#f5f5f5; border-radius:6px; padding:7px 10px; line-height:1.4;">
-        ※ AIによる画像診断の参考情報です。農薬を使用する場合は、必ず対象作物に登録のある適用薬剤・希釈倍率・使用時期を製品ラベルや最新の登録情報でご確認ください。
+        ※ AIによる画像診断・作業判断の参考情報です。農薬を使用する場合は、必ず対象作物に登録のある適用薬剤・希釈倍率・使用時期を製品ラベルや最新の登録情報でご確認ください。
       </div>
     </div>
   `;
   return html;
+};
+
+window.registerFieldPhotoAiWorkInstructions_ = async (mode, recordId, polyId) => {
+  const pid = polyId || activePolyId;
+  const p = loadedPolygons[pid];
+  if (!p) {
+    customAlert('圃場が見つかりません。');
+    return;
+  }
+  let targetAnalysis = null;
+  let savedItem = null;
+  if (mode === 'saved') {
+    savedItem = Array.isArray(p.photos) ? p.photos.find(x => x && String(x.id) === String(recordId)) : null;
+    if (!savedItem || !savedItem.data || !savedItem.data.photoAnalysis) {
+      customAlert('保存済みのAI分析結果が見つかりません。');
+      return;
+    }
+    targetAnalysis = window.normalizeFieldPhotoAnalysisResult_(savedItem.data.photoAnalysis);
+  } else {
+    syncFieldPhotoAnalysisInputsFromDom_();
+    const st = window.fieldPhotoAnalysisState;
+    if (!st || !st.result) {
+      customAlert('AI分析結果が見つかりません。');
+      return;
+    }
+    targetAnalysis = window.normalizeFieldPhotoAnalysisResult_(st.result);
+  }
+
+  const list = Array.isArray(targetAnalysis.workInstructions) ? targetAnalysis.workInstructions : [];
+  const tasksToRegister = [];
+  list.forEach((ins, idx) => {
+    if (ins.registeredAt) return;
+    const chk = document.getElementById(`fpai_wi_${idx}_check`);
+    if (!chk || !chk.checked) return;
+    const workName = (document.getElementById(`fpai_wi_${idx}_work`)?.value || ins.workName || ins.title || '').trim();
+    if (!workName) return;
+    const cropName = (document.getElementById(`fpai_wi_${idx}_crop`)?.value || '').trim();
+    const person = (document.getElementById(`fpai_wi_${idx}_person`)?.value || '').trim();
+    const hours = (document.getElementById(`fpai_wi_${idx}_hours`)?.value || '').trim();
+    const schedDate = document.getElementById(`fpai_wi_${idx}_date`)?.value || getTodayJstYmd_();
+    const deadline = document.getElementById(`fpai_wi_${idx}_deadline`)?.value || schedDate;
+    const notes = (document.getElementById(`fpai_wi_${idx}_notes`)?.value || '').trim();
+    tasksToRegister.push({ idx, ins, workName, cropName, person, hours, schedDate, deadline, notes });
+  });
+
+  if (!tasksToRegister.length) {
+    customAlert('作業予定へ登録する指示を1件以上チェックしてください（作業名は必須です）。');
+    return;
+  }
+
+  const btn = document.getElementById('fpaiRegisterScheduleBtn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ 作業予定へ登録中...';
+  }
+  if (typeof showLoader === 'function') showLoader('AI作業指示を作業予定へ登録中...');
+
+  let okCount = 0;
+  const errors = [];
+  const nowStr = new Date().toLocaleString('ja-JP');
+
+  try {
+    for (const t of tasksToRegister) {
+      try {
+        const res = await callGAS('addWorkSchedule', {
+          workName: t.workName,
+          fieldName: p.name || '',
+          cropName: t.cropName,
+          dept: findWorkMasterCategory_(t.workName),
+          person: t.person,
+          schedDate: t.schedDate,
+          deadline: t.deadline,
+          hours: t.hours,
+          notes: t.notes,
+          polyId: pid,
+          userName: currentUser,
+          isAiInstruction: true,
+          aiInstruction: {
+            isAiInstruction: true,
+            priority: t.ins.priority,
+            urgency: t.ins.urgency,
+            title: t.ins.title,
+            reason: t.ins.reason,
+            targetArea: t.ins.targetArea,
+            steps: t.ins.steps,
+            materials: t.ins.materials,
+            caution: t.ins.caution,
+            analysisTitle: targetAnalysis.title
+          }
+        });
+        t.ins.registeredAt = nowStr;
+        t.ins.registeredScheduleId = String((res && res.id) || '');
+        t.ins.registeredAssignee = t.person;
+        t.ins.registeredDate = t.schedDate;
+        t.ins.registeredDeadline = t.deadline;
+        okCount++;
+      } catch (itemErr) {
+        errors.push(`${t.workName}: ${(itemErr && itemErr.message) || itemErr}`);
+      }
+    }
+
+    if (okCount > 0) {
+      window._psCachedSchedules = null;
+      if (mode === 'saved' && savedItem) {
+        const mergedAnalysis = Object.assign({}, savedItem.data.photoAnalysis, targetAnalysis);
+        const updatedData = Object.assign({}, savedItem.data, { photoAnalysis: mergedAnalysis });
+        try {
+          const updatedItems = await callGAS('updateRecordItem', {
+            id: pid,
+            recordId: recordId,
+            recordType: savedItem.type || 'report',
+            data: updatedData,
+            photos: [],
+            keptUrls: [],
+            userName: currentUser
+          });
+          if (Array.isArray(updatedItems)) {
+            loadedPolygons[pid].photos = updatedItems;
+          } else {
+            savedItem.data = updatedData;
+          }
+          if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+            window.updateInitDataCacheWithLocalRecords_();
+          }
+        } catch (saveErr) {
+          console.warn('登録済み状態の分析レコード更新に失敗:', saveErr);
+          savedItem.data = updatedData;
+        }
+      } else if (window.fieldPhotoAnalysisState) {
+        window.fieldPhotoAnalysisState.result = targetAnalysis;
+      }
+    }
+
+    if (mode === 'saved') {
+      window.openSavedFieldPhotoAnalysis_(recordId, pid);
+    } else {
+      window.renderFieldPhotoAnalysisView_(pid);
+    }
+
+    if (okCount > 0 && typeof window.showRecordSyncToast === 'function') {
+      window.showRecordSyncToast(`✅ ${okCount}件のAI作業指示を作業予定へ登録しました！`, 'ok');
+    }
+    if (errors.length) {
+      customAlert(`一部の登録に失敗しました:\n${errors.join('\n')}`);
+    }
+  } finally {
+    if (typeof hideLoader === 'function') hideLoader();
+  }
 };
 
 window.buildSavedFieldPhotoAnalysisCardHtml_ = (item, polyId) => {
@@ -5071,11 +5715,14 @@ window.buildSavedFieldPhotoAnalysisCardHtml_ = (item, polyId) => {
   const rawPa = (d.photoAnalysis && typeof d.photoAnalysis === 'object') ? d.photoAnalysis : {};
   const analyzedPhotos = Array.isArray(rawPa.analyzedPhotos) ? rawPa.analyzedPhotos : [];
   const sev = window.getFieldPhotoSeverityStyle_(pa.severity);
+  const dec = window.getFieldPhotoWorkDecisionStyle_(pa.workDecision);
   const isOwner = (item.author === currentUser || currentUser === 'システム');
   const titleText = String(d.photoTitle || d.title || pa.title || 'AI写真分析').trim();
   const userMemo = String(d.notes || d.memo || '').trim();
   const topCause = pa.possibleCauses[0] ? pa.possibleCauses[0].name : '';
   const topAction = pa.recommendedActions[0] ? pa.recommendedActions[0].action : '';
+  const wiTotal = pa.workInstructions.length;
+  const wiReg = pa.workInstructions.filter(x => x.registeredAt).length;
 
   const thumbHtml = analyzedPhotos.length
     ? `<div style="display:flex; gap:6px; overflow-x:auto; padding:4px 0 8px;">${analyzedPhotos.map((ph, idx) => {
@@ -5097,6 +5744,7 @@ window.buildSavedFieldPhotoAnalysisCardHtml_ = (item, polyId) => {
           ${item._isSaving ? '<span style="font-size:11px; font-weight:bold; background:#E3F2FD; color:#1565C0; padding:2px 8px; border-radius:10px; border:1px solid #90CAF9;">⏳ 保存中...</span>' : ''}
           <span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#EDE7F6; color:#5E35B1; padding:2px 8px; border-radius:10px; border:1px solid #B39DDB;">🤖 AI分析</span>
           <span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:${sev.bg}; color:${sev.color}; padding:2px 8px; border-radius:10px; border:1px solid ${sev.border};">${sev.icon} ${esc(pa.severity)}</span>
+          <span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:${dec.bg}; color:${dec.color}; padding:2px 8px; border-radius:10px; border:1px solid ${dec.border};">${dec.icon} ${esc(pa.workDecision)}</span>
           ${!item._isSaving ? `<button type="button" onclick="openSavedFieldPhotoAnalysis_('${jsRecId}', '${jsPolyId}')" style="background:#5E35B1; color:#fff; border:none; border-radius:6px; padding:4px 9px; font-size:11px; font-weight:bold; cursor:pointer;">📄 詳細</button>` : ''}
           ${(!item._isSaving && isOwner) ? `<button type="button" onclick="deleteFieldPhotoRecord('${jsRecId}', '${jsPolyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>` : ''}
         </div>
@@ -5106,8 +5754,9 @@ window.buildSavedFieldPhotoAnalysisCardHtml_ = (item, polyId) => {
         <div style="font-size:15px; font-weight:bold; color:#4527A0; margin-bottom:6px; padding:6px 10px; background:#F5F0FF; border-radius:6px; line-height:1.4;">🤖 ${esc(titleText)}</div>
         ${thumbHtml}
         ${pa.summary ? `<div style="font-size:12.5px; color:#333; line-height:1.5; margin-bottom:8px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;">${esc(pa.summary)}</div>` : ''}
-        ${(topCause || topAction || pa.cropGuessed) ? `
+        ${(wiTotal > 0 || topCause || topAction || pa.cropGuessed) ? `
           <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;">
+            ${wiTotal > 0 ? `<span style="font-size:11px; font-weight:bold; background:#EDE7F6; color:#4527A0; border:1px solid #B39DDB; border-radius:10px; padding:2px 8px;">📋 作業指示 ${wiTotal}件${wiReg > 0 ? `（✅${wiReg}件予定済）` : ''}</span>` : ''}
             ${pa.cropGuessed ? `<span style="font-size:11px; font-weight:bold; background:#E8F5E9; color:#2E7D32; border:1px solid #A5D6A7; border-radius:10px; padding:2px 8px;">🌱 ${esc(pa.cropGuessed)}</span>` : ''}
             ${topCause ? `<span style="font-size:11px; font-weight:bold; background:#FFF3E0; color:#E65100; border:1px solid #FFCC80; border-radius:10px; padding:2px 8px;">🔎 ${esc(topCause)}</span>` : ''}
             ${topAction ? `<span style="font-size:11px; font-weight:bold; background:#E8F5E9; color:#1B5E20; border:1px solid #A5D6A7; border-radius:10px; padding:2px 8px;">🛠️ ${esc(topAction)}</span>` : ''}
@@ -5251,6 +5900,12 @@ window.startFieldPhotoAnalysisFromRecord_ = (recordId, polyId) => {
 async function loadFieldPhotoAsAiPayload_(rawUrl) {
   const url = String(rawUrl || '').trim();
   if (!url) throw new Error('写真URLが空です');
+  if (url.indexOf('data:image/') === 0) {
+    const m = url.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+    if (m && m[2]) {
+      return { mimeType: m[1], base64Data: m[2] };
+    }
+  }
 
   const drawImgToBase64 = (img) => {
     const maxSide = 1024;
@@ -5322,6 +5977,83 @@ function getFieldContextForAiAnalysis_(p) {
     soilType: String(p.soilType || '').trim(),
     area: p.area ? `${p.area}㎡` : ''
   };
+}
+
+function getFieldWorkMasterForAi_() {
+  const raw = (typeof pdlWorkMaster !== 'undefined' && Array.isArray(pdlWorkMaster)) ? pdlWorkMaster : [];
+  const seen = new Set();
+  const out = [];
+  raw.forEach(w => {
+    if (!w) return;
+    const name = typeof w === 'string' ? w.trim() : String(w.name || '').trim();
+    const category = typeof w === 'string' ? '' : String(w.category || w.dept || '').trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    out.push({ name, category });
+  });
+  return out.slice(0, 60);
+}
+
+function getFieldWorkMasterNames_() {
+  return getFieldWorkMasterForAi_().map(w => w.name);
+}
+
+function findWorkMasterCategory_(workName) {
+  const target = String(workName || '').trim();
+  if (!target) return '';
+  const hit = getFieldWorkMasterForAi_().find(w => w.name === target);
+  return hit ? hit.category : '';
+}
+
+function getFieldStaffNamesForAi_(p) {
+  const seen = new Set();
+  const out = [];
+  const addName = (n) => {
+    const clean = String(n || '').trim();
+    if (clean && clean !== 'システム' && !seen.has(clean)) {
+      seen.add(clean);
+      out.push(clean);
+    }
+  };
+  if (typeof currentUser !== 'undefined') addName(currentUser);
+  if (Array.isArray(window.pdlUserLocations)) {
+    window.pdlUserLocations.forEach(u => {
+      if (u) addName(u.userName || u.name);
+    });
+  }
+  if (p && Array.isArray(p.photos)) {
+    p.photos.slice(0, 30).forEach(ph => {
+      if (ph && ph.author) addName(ph.author);
+    });
+  }
+  return out.slice(0, 40);
+}
+
+function getFieldRecentWorksForAi_(p) {
+  if (!p || !Array.isArray(p.photos)) return [];
+  const sorted = sortFieldPhotoRecordsDesc_(p.photos.filter(item => {
+    return item && !(item.data && item.data.isPhotoAnalysis);
+  }));
+  const out = [];
+  for (const item of sorted) {
+    if (out.length >= 12) break;
+    const d = (item.data && typeof item.data === 'object') ? item.data : {};
+    const workName = String(d.workName || '').trim();
+    const crop = String(d.crop || '').trim();
+    const progress = String(d.progress || '').trim();
+    const memo = String(d.notes || d.memo || d.comment || d.photoTitle || '').trim();
+    if (!workName && !memo && !crop) continue;
+    out.push({
+      date: String(item.date || '').trim(),
+      type: String(item.type || (workName ? 'work' : 'growth')).trim(),
+      workName,
+      crop,
+      progress,
+      memo: memo.slice(0, 100),
+      author: String(item.author || '').trim()
+    });
+  }
+  return out;
 }
 
 function syncFieldPhotoAnalysisInputsFromDom_() {
@@ -5487,7 +6219,7 @@ window.renderFieldPhotoAnalysisView_ = (polyId) => {
     const saveTitle = st.editTitle || st.result.title || 'AI写真分析';
     resultSectionHtml = `
       <div id="field_photo_ai_result_box" style="margin-top:14px;">
-        ${window.buildFieldPhotoAnalysisResultHtml_(st.result, st.items)}
+        ${window.buildFieldPhotoAnalysisResultHtml_(st.result, st.items, { mode: 'current', polyId: pid, recordId: '' })}
 
         <div style="margin-top:12px; background:#fff; border:2px solid #A5D6A7; border-radius:12px; padding:14px; box-shadow:0 2px 6px rgba(0,0,0,0.05);">
           <div style="font-size:13px; font-weight:bold; color:#2E7D32; margin-bottom:10px;">💾 この分析結果を写真一覧へ保存</div>
@@ -5534,6 +6266,9 @@ window.renderFieldPhotoAnalysisView_ = (polyId) => {
             <span>記録のタイトル・タグ・メモもAIに渡す</span>
           </label>
           ${memoPreviewHtml}
+          <div style="margin-top:8px; font-size:11px; color:#5E35B1; background:#F5F0FF; border:1px solid #D1C4E9; border-radius:6px; padding:5px 8px;">
+            🧠 圃場の直近履歴 (${getFieldRecentWorksForAi_(p).length}件) と作業名マスター (${getFieldWorkMasterForAi_().length}件) も自動参照して作業指示を作成します
+          </div>
 
           <div style="margin-top:12px;">
             <label class="form-label" style="font-size:12px; color:#333; margin:0 0 4px;">💬 気になる点・質問（任意）</label>
@@ -5600,7 +6335,7 @@ window.runFieldPhotoAiAnalysis_ = async (polyId) => {
     }
 
     const progEl2 = document.getElementById('field_photo_ai_progress_text');
-    if (progEl2) progEl2.textContent = 'Gemini AI が写真とメモを分析しています...';
+    if (progEl2) progEl2.textContent = 'Gemini AI が写真・履歴から分析と作業判断を行っています...';
 
     const res = await callGAS('analyzeFieldPhotosWithGemini', {
       fieldName: p.name || '',
@@ -5608,6 +6343,9 @@ window.runFieldPhotoAiAnalysis_ = async (polyId) => {
       analysisType: st.analysisType || 'general',
       userQuestion: st.userQuestion || '',
       includeMemo: !!st.includeMemo,
+      todayYmd: getTodayJstYmd_(),
+      workMaster: getFieldWorkMasterForAi_(),
+      recentWorks: getFieldRecentWorksForAi_(p),
       images: imagesPayload
     });
 
@@ -5641,36 +6379,43 @@ window.saveFieldPhotoAnalysisResult_ = async (polyId) => {
     customAlert('保存する分析結果がありません。');
     return;
   }
-  const now = new Date();
-  const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-  const finalTitle = String(st.editTitle || st.result.title || 'AI写真分析').trim();
-  const userNote = String(st.saveNote || '').trim();
-
-  const recordData = {
-    isPhotoAnalysis: true,
-    photoTitle: finalTitle,
-    photoDate: ymd,
-    photoTime: hm,
-    photoTags: [FIELD_PHOTO_AI_SAVED_TAG_],
-    crop: st.result.cropGuessed || '',
-    notes: userNote,
-    photoAnalysis: Object.assign({}, st.result, {
-      analysisType: st.analysisType || 'general',
-      userQuestion: st.userQuestion || '',
-      includeMemo: !!st.includeMemo,
-      analyzedPhotos: st.items.map(it => ({
-        url: String(it.url || ''),
-        fullUrl: String(it.fullUrl || it.url || ''),
-        recordId: String(it.recordId || ''),
-        date: String(it.date || ''),
-        title: String(it.title || '')
-      }))
-    })
-  };
-
   if (typeof showLoader === 'function') showLoader('AI分析結果を保存中...');
   try {
+    if (st._pendingPhotoSavePromise) {
+      try { await st._pendingPhotoSavePromise; } catch (eWait) { }
+    }
+    const now = new Date();
+    const ymd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const hm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const finalTitle = String(st.editTitle || st.result.title || 'AI写真分析').trim();
+    const userNote = String(st.saveNote || '').trim();
+
+    const recordData = {
+      isPhotoAnalysis: true,
+      photoTitle: finalTitle,
+      photoDate: ymd,
+      photoTime: hm,
+      photoTags: [FIELD_PHOTO_AI_SAVED_TAG_],
+      crop: st.result.cropGuessed || '',
+      notes: userNote,
+      photoAnalysis: Object.assign({}, st.result, {
+        analysisType: st.analysisType || 'general',
+        userQuestion: st.userQuestion || '',
+        includeMemo: !!st.includeMemo,
+        analyzedPhotos: st.items.map(it => {
+          const u = String(it.url || '');
+          const fu = String(it.fullUrl || it.url || '');
+          return {
+            url: u.indexOf('data:') === 0 ? '' : u,
+            fullUrl: fu.indexOf('data:') === 0 ? '' : fu,
+            recordId: String(it.recordId || ''),
+            date: String(it.date || ''),
+            title: String(it.title || '')
+          };
+        }).filter(ph => ph.url || ph.fullUrl || ph.recordId)
+      })
+    };
+
     const updatedItems = await callGAS('saveRecord', {
       id: pid,
       name: p.name,
@@ -5899,7 +6644,7 @@ window.openSavedFieldPhotoAnalysis_ = (recordId, polyId) => {
           ${thumbsHtml}
         </div>
 
-        ${window.buildFieldPhotoAnalysisResultHtml_(pa, analyzedPhotos)}
+        ${window.buildFieldPhotoAnalysisResultHtml_(pa, analyzedPhotos, { mode: 'saved', polyId: pid, recordId: item.id })}
 
         <div style="margin-top:12px; background:#fff; border:1px solid #CFD8DC; border-radius:12px; padding:12px;">
           <div style="font-size:12px; font-weight:bold; color:#333; margin-bottom:8px;">📝 保存タイトル・メモ</div>
@@ -6468,15 +7213,19 @@ window.renderFieldPhotoAddForm = (id, editRecordId) => {
 
   const footerEl = document.getElementById('rightPanelFooter');
   if (footerEl) {
-    const saveBtnLabel = window.fieldPhotoEditingRecordId ? '💾 変更を保存する' : '💾 写真とメモを保存する';
+    const jsPolyId = escapeJsSingleFieldPhoto_(polyId);
+    const saveBtnLabel = window.fieldPhotoEditingRecordId ? '💾 変更を保存する' : '💾 保存する';
     const saveBtnBg = window.fieldPhotoEditingRecordId ? '#1565C0' : '#2E7D32';
     footerEl.innerHTML = `
-      <div style="display:flex; gap:10px;">
-        <button id="submitFieldPhotoBtn" type="button" onclick="submitFieldPhotoRecord('${polyId}')" style="background:${saveBtnBg}; color:white; flex:1; padding:14px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:16px; box-shadow:0 3px 6px rgba(0,0,0,0.25);">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button id="submitFieldPhotoBtn" type="button" onclick="submitFieldPhotoRecord('${jsPolyId}')" style="background:${saveBtnBg}; color:white; flex:1; min-width:118px; padding:13px 10px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:14px; box-shadow:0 3px 6px rgba(0,0,0,0.2);">
           ${saveBtnLabel}
         </button>
-        <button type="button" onclick="renderFieldPhotosTable('${polyId}')" style="background:#eee; color:#333; padding:14px 18px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:14px;">
-          一覧に戻る
+        <button id="submitFieldPhotoAiBtn" type="button" onclick="submitFieldPhotoRecord('${jsPolyId}', { launchAiInstruction: true })" style="background:linear-gradient(135deg, #5E35B1 0%, #3949AB 100%); color:white; flex:1.35; min-width:165px; padding:13px 10px; border-radius:8px; border:none; font-weight:bold; cursor:pointer; font-size:13.5px; box-shadow:0 3px 6px rgba(94,53,177,0.3);">
+          🤖 保存してAI分析・作業指示
+        </button>
+        <button type="button" onclick="renderFieldPhotosTable('${jsPolyId}')" style="background:#eee; color:#333; padding:13px 14px; border-radius:8px; border:none; cursor:pointer; font-weight:bold; font-size:13.5px;">
+          戻る
         </button>
       </div>
     `;
@@ -7137,13 +7886,14 @@ window.openFieldPhotoImageEditor = async (sourceType, idx) => {
   };
 };
 
-window.submitFieldPhotoRecord = async (id) => {
+window.submitFieldPhotoRecord = async (id, opts) => {
   const polyId = id || activePolyId;
   const p = loadedPolygons[polyId];
   if (!p) {
     customAlert("圃場情報が見つかりません。");
     return;
   }
+  const launchAi = !!(opts && opts.launchAiInstruction);
 
   const editingId = window.fieldPhotoEditingRecordId || null;
   const keptUrls = Array.isArray(window.fieldPhotoKeptUrls) ? window.fieldPhotoKeptUrls.filter(Boolean) : [];
@@ -7166,6 +7916,30 @@ window.submitFieldPhotoRecord = async (id) => {
     saveFieldPhotoCustomTag_(unaddedTag);
   }
 
+  let preResizedList = null;
+  if (launchAi) {
+    const aiBtn = document.getElementById('submitFieldPhotoAiBtn');
+    const saveBtn = document.getElementById('submitFieldPhotoBtn');
+    if (aiBtn) { aiBtn.disabled = true; aiBtn.textContent = '⏳ 写真を準備中...'; }
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      preResizedList = await Promise.all(pendingItems.map(async (it, i) => {
+        const b64 = it.resizePromise
+          ? await it.resizePromise
+          : (typeof resizeImg === 'function' ? await resizeImg(it.file || it) : '');
+        return {
+          filename: it.filename || ('photo_' + i + '.jpg'),
+          base64: b64
+        };
+      }));
+    } catch (prepErr) {
+      if (aiBtn) { aiBtn.disabled = false; aiBtn.textContent = '🤖 保存してAI分析・作業指示'; }
+      if (saveBtn) saveBtn.disabled = false;
+      customAlert("写真の準備に失敗しました: " + (prepErr.message || prepErr));
+      return;
+    }
+  }
+
   if (!Array.isArray(loadedPolygons[polyId].photos)) loadedPolygons[polyId].photos = [];
   const existingItem = editingId
     ? loadedPolygons[polyId].photos.find(x => x && String(x.id) === String(editingId))
@@ -7183,7 +7957,7 @@ window.submitFieldPhotoRecord = async (id) => {
     photoTags: tags
   });
 
-  // 楽観的UI更新：押した瞬間に一覧へ切り替えてユーザーを待たせない
+  // 楽観的UI更新：押した瞬間に一覧（またはAI分析画面）へ切り替えてユーザーを待たせない
   pendingItems.forEach(it => { it.keepPreviewUrl = true; });
   const tempUrls = pendingItems.map(it => it.previewUrl).filter(Boolean);
   const formattedDate = dateVal ? dateVal.replace(/-/g, '/') : '';
@@ -7235,100 +8009,167 @@ window.submitFieldPhotoRecord = async (id) => {
   window.fieldPhotoEditingRecordId = null;
   window.fieldPhotoSelectedTags = [];
   window.fieldPhotoActiveFilterTag = 'ALL';
-  renderFieldPhotosTable(polyId);
 
-  if (typeof window.showRecordSyncToast === 'function') {
-    window.showRecordSyncToast(editingId ? "⏳ 写真の編集内容を保存中..." : "⏳ 写真をバックグラウンドで保存中...", "info");
+  if (!launchAi) {
+    renderFieldPhotosTable(polyId);
   }
 
-  try {
-    const resizedList = await Promise.all(pendingItems.map(async (it, i) => {
-      const b64 = it.resizePromise
-        ? await it.resizePromise
-        : (typeof resizeImg === 'function' ? await resizeImg(it.file || it) : '');
-      return {
-        filename: it.filename || ('photo_' + i + '.jpg'),
-        base64: b64
-      };
-    }));
+  if (typeof window.showRecordSyncToast === 'function') {
+    window.showRecordSyncToast(
+      launchAi
+        ? "⏳ 写真を保存しつつAIで作業判断を開始します..."
+        : (editingId ? "⏳ 写真の編集内容を保存中..." : "⏳ 写真をバックグラウンドで保存中..."),
+      "info"
+    );
+  }
 
-    let updatedItems;
-    if (editingId) {
-      updatedItems = await callGAS('updateRecordItem', {
-        id: polyId,
-        recordId: editingId,
-        recordType: (existingItem && existingItem.type) ? existingItem.type : 'growth',
-        data: recordData,
-        photos: resizedList,
-        keptUrls: keptUrls,
-        userName: currentUser
-      });
-    } else {
-      updatedItems = await callGAS('saveRecord', {
-        id: polyId,
-        name: p.name,
-        author: currentUser,
-        recordType: 'growth',
-        data: recordData,
-        photos: resizedList
-      });
-    }
+  const runSavePromise = (async () => {
+    try {
+      const resizedList = preResizedList || await Promise.all(pendingItems.map(async (it, i) => {
+        const b64 = it.resizePromise
+          ? await it.resizePromise
+          : (typeof resizeImg === 'function' ? await resizeImg(it.file || it) : '');
+        return {
+          filename: it.filename || ('photo_' + i + '.jpg'),
+          base64: b64
+        };
+      }));
 
-    tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { } });
-
-    if (Array.isArray(updatedItems)) {
-      loadedPolygons[polyId].photos = updatedItems;
-      if (typeof window.updateActivityNoticeExtraRecordId_ === 'function') {
-        try {
-          const savedItem = editingId
-            ? updatedItems.find(x => x && String(x.id) === String(editingId))
-            : updatedItems[updatedItems.length - 1];
-          const realId = (savedItem && savedItem.id) ? String(savedItem.id) : '';
-          const firstUrl = savedItem
-            ? ((Array.isArray(savedItem.urls) && savedItem.urls[0]) || savedItem.url || '')
-            : '';
-          window.updateActivityNoticeExtraRecordId_(tempId, realId, firstUrl);
-        } catch (eNoticeUpd) { }
+      let updatedItems;
+      if (editingId) {
+        updatedItems = await callGAS('updateRecordItem', {
+          id: polyId,
+          recordId: editingId,
+          recordType: (existingItem && existingItem.type) ? existingItem.type : 'growth',
+          data: recordData,
+          photos: resizedList,
+          keptUrls: keptUrls,
+          userName: currentUser
+        });
+      } else {
+        updatedItems = await callGAS('saveRecord', {
+          id: polyId,
+          name: p.name,
+          author: currentUser,
+          recordType: 'growth',
+          data: recordData,
+          photos: resizedList
+        });
       }
-    } else {
-      if (!editingId) {
-        loadedPolygons[polyId].photos = (loadedPolygons[polyId].photos || []).filter(x => x.id !== tempId);
-      } else if (existingItem) {
+
+      tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) { } });
+
+      let savedItem = null;
+      if (Array.isArray(updatedItems)) {
+        loadedPolygons[polyId].photos = updatedItems;
+        savedItem = editingId
+          ? updatedItems.find(x => x && String(x.id) === String(editingId))
+          : updatedItems[updatedItems.length - 1];
+        if (typeof window.updateActivityNoticeExtraRecordId_ === 'function') {
+          try {
+            const realId = (savedItem && savedItem.id) ? String(savedItem.id) : '';
+            const firstUrl = savedItem
+              ? ((Array.isArray(savedItem.urls) && savedItem.urls[0]) || savedItem.url || '')
+              : '';
+            window.updateActivityNoticeExtraRecordId_(tempId, realId, firstUrl);
+          } catch (eNoticeUpd) { }
+        }
+      } else {
+        if (!editingId) {
+          loadedPolygons[polyId].photos = (loadedPolygons[polyId].photos || []).filter(x => x.id !== tempId);
+        } else if (existingItem) {
+          delete existingItem._isSaving;
+        }
+        if (typeof window.refreshPolygonPhotos === 'function') {
+          try { await window.refreshPolygonPhotos(polyId); } catch (e) { }
+        }
+      }
+
+      if (savedItem && window.fieldPhotoAnalysisState && window.fieldPhotoAnalysisState._sourceTempId === tempId) {
+        const realId = String(savedItem.id || '');
+        const realUrls = (Array.isArray(savedItem.urls) && savedItem.urls.length)
+          ? savedItem.urls
+          : (savedItem.url ? [savedItem.url] : []);
+        window.fieldPhotoAnalysisState.items.forEach((aiIt, idx) => {
+          if (realId) aiIt.recordId = realId;
+          if (realUrls[idx]) {
+            aiIt.url = String(realUrls[idx]);
+            aiIt.fullUrl = String(realUrls[idx]).replace('sz=w800', 'sz=w1600');
+          }
+        });
+      }
+
+      if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
+        window.updateInitDataCacheWithLocalRecords_();
+      }
+
+      if (typeof window.showRecordSyncToast === 'function') {
+        window.showRecordSyncToast(editingId ? "✅ 写真の編集を保存しました！" : "📸 写真とメモを保存しました！", "ok");
+      }
+
+      const isAnalysisOpen = !!document.getElementById('field_photo_analysis_root');
+      const isPhotoFormOpen = !!document.getElementById('field_photo_memo_input');
+      if (activePolyId === polyId && document.getElementById('rightPanel')?.classList.contains('open') && !isAnalysisOpen && !isPhotoFormOpen) {
+        renderFieldPhotosTable(polyId);
+      }
+
+      if (typeof openMainMenu === 'function') {
+        try { openMainMenu(polyId); } catch (e) { }
+      }
+    } catch (e) {
+      console.error("submitFieldPhotoRecord error:", e);
+      if (editingId && existingItem && prevBackup) {
+        Object.assign(existingItem, prevBackup);
         delete existingItem._isSaving;
+      } else if (loadedPolygons[polyId] && Array.isArray(loadedPolygons[polyId].photos)) {
+        loadedPolygons[polyId].photos = loadedPolygons[polyId].photos.filter(x => x.id !== tempId);
       }
-      if (typeof window.refreshPolygonPhotos === 'function') {
-        try { await window.refreshPolygonPhotos(polyId); } catch (e) { }
+      tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (err) { } });
+      const isAnalysisOpen = !!document.getElementById('field_photo_analysis_root');
+      const isPhotoFormOpen = !!document.getElementById('field_photo_memo_input');
+      if (activePolyId === polyId && document.getElementById('rightPanel')?.classList.contains('open') && !isAnalysisOpen && !isPhotoFormOpen) {
+        renderFieldPhotosTable(polyId);
       }
+      customAlert("写真の保存に失敗しました: " + (e.message || e));
     }
+  })();
 
-    if (typeof window.updateInitDataCacheWithLocalRecords_ === 'function') {
-      window.updateInitDataCacheWithLocalRecords_();
-    }
-
-    if (typeof window.showRecordSyncToast === 'function') {
-      window.showRecordSyncToast(editingId ? "✅ 写真の編集を保存しました！" : "📸 写真とメモを保存しました！", "ok");
-    }
-
-    if (activePolyId === polyId && document.getElementById('rightPanel')?.classList.contains('open')) {
-      renderFieldPhotosTable(polyId);
-    }
-
-    if (typeof openMainMenu === 'function') {
-      try { openMainMenu(polyId); } catch (e) { }
-    }
-  } catch (e) {
-    console.error("submitFieldPhotoRecord error:", e);
-    if (editingId && existingItem && prevBackup) {
-      Object.assign(existingItem, prevBackup);
-      delete existingItem._isSaving;
-    } else if (loadedPolygons[polyId] && Array.isArray(loadedPolygons[polyId].photos)) {
-      loadedPolygons[polyId].photos = loadedPolygons[polyId].photos.filter(x => x.id !== tempId);
-    }
-    tempUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (err) { } });
-    if (activePolyId === polyId && document.getElementById('rightPanel')?.classList.contains('open')) {
-      renderFieldPhotosTable(polyId);
-    }
-    customAlert("写真の保存に失敗しました: " + (e.message || e));
+  if (launchAi) {
+    const aiUrls = [
+      ...keptUrls,
+      ...(preResizedList || []).map((r, i) => (r && r.base64) || tempUrls[i] || '').filter(Boolean)
+    ].slice(0, FIELD_PHOTO_MAX_AI_PHOTOS_);
+    const aiItems = aiUrls.map((u, idx) => ({
+      key: String(tempId) + '::' + idx,
+      recordId: editingId ? String(editingId) : String(tempId),
+      urlIndex: idx,
+      url: String(u),
+      fullUrl: String(u).indexOf('data:') === 0 ? String(u) : String(u).replace('sz=w800', 'sz=w1600'),
+      date: formattedDate || '',
+      time: timeVal || '',
+      author: currentUser || '',
+      title: photoTitle,
+      tags: tags.slice(),
+      memo: memo
+    }));
+    window.fieldPhotoSelectMode = false;
+    window.fieldPhotoSelectedItems = aiItems;
+    window.fieldPhotoAnalysisState = {
+      polyId: polyId,
+      items: aiItems,
+      analysisType: 'work_instruction',
+      includeMemo: true,
+      userQuestion: '',
+      loading: false,
+      progressText: '',
+      error: '',
+      result: null,
+      editTitle: '',
+      saveNote: '',
+      _sourceTempId: tempId,
+      _pendingPhotoSavePromise: runSavePromise
+    };
+    window.runFieldPhotoAiAnalysis_(polyId);
   }
 };
 
@@ -11073,6 +11914,9 @@ window.handleWorkDateChange = () => {
     if (typeof window.prefetchWorkTimeHints === 'function') {
       window.prefetchWorkTimeHints(selectedDate, { applyToForm: false });
     }
+    if (typeof window.syncWorkRecordNextDayVehicleDates_ === 'function') {
+      window.syncWorkRecordNextDayVehicleDates_(selectedDate);
+    }
     return;
   }
 
@@ -11097,6 +11941,9 @@ window.handleWorkDateChange = () => {
   }
   if (typeof window.refreshWorkFormLunchSection_ === 'function') {
     window.refreshWorkFormLunchSection_();
+  }
+  if (typeof window.syncWorkRecordNextDayVehicleDates_ === 'function') {
+    window.syncWorkRecordNextDayVehicleDates_(selectedDate);
   }
 };
 
@@ -13632,6 +14479,566 @@ window.syncFieldMachineChipStyle = (chkEl) => {
   if (typeof window.syncFieldMachineryFuelPairing_ === 'function') window.syncFieldMachineryFuelPairing_();
   if (typeof window.refreshHitchLinkSuggestions_ === 'function') window.refreshHitchLinkSuggestions_();
   if (typeof window.refreshFieldMachinePeriodicAlert_ === 'function') window.refreshFieldMachinePeriodicAlert_();
+  if (typeof window.refreshWorkRecordNextDayKeiTruckUI_ === 'function') window.refreshWorkRecordNextDayKeiTruckUI_();
+};
+
+// ==========================================
+// 🛻 作業記録・一括入力：使用車両＆軽トラ翌日利用設定
+// ==========================================
+window._workRecordVehicleState = window._workRecordVehicleState || {
+  open: false,
+  selectedIds: [],
+  nextDay: {}
+};
+
+window.collectWorkRecordSelectedVehicles_ = () => {
+  const vd = window.VehicleDispatch;
+  const rawList = [];
+  document.querySelectorAll('#field_vehicle_section .used-vehicle-check:checked').forEach(chk => {
+    rawList.push({
+      id: String(chk.value || '').trim(),
+      name: String(chk.getAttribute('data-name') || '').trim(),
+      plateNumber: String(chk.getAttribute('data-plate') || '').trim(),
+      vehicleType: String(chk.getAttribute('data-vehicle-type') || '').trim(),
+      isVehicle: true
+    });
+  });
+  document.querySelectorAll('#field_machinery_section .used-machine-check:checked, #used_items_section .used-machine-check:checked').forEach(chk => {
+    rawList.push({
+      id: String(chk.value || '').trim(),
+      name: String(chk.getAttribute('data-name') || '').trim()
+    });
+  });
+  if (vd && typeof vd.resolveVehiclesFromUsed === 'function') {
+    return vd.resolveVehiclesFromUsed(rawList).map(v => ({
+      id: vd.normalizeVehicleId(v.id),
+      name: vd.formatVehicleLabel(v) || v.name || v.id,
+      plateNumber: String(v.plateNumber || '').trim(),
+      vehicleType: String(v.vehicleType || v.type || '').trim()
+    }));
+  }
+  const seen = new Set();
+  return rawList.filter(v => {
+    if (!v.isVehicle) return false;
+    const k = String(v.id || v.name || '').trim();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+};
+
+window.onWorkRecordVehicleCheckChange_ = (chkEl) => {
+  if (chkEl) {
+    const label = chkEl.closest('label');
+    if (label) {
+      const on = !!chkEl.checked;
+      label.style.background = on ? '#B2DFDB' : '#fff';
+      label.style.borderColor = on ? '#00897B' : '#B2DFDB';
+      label.style.fontWeight = on ? 'bold' : 'normal';
+    }
+  }
+  const st = window._workRecordVehicleState || (window._workRecordVehicleState = { open: false, selectedIds: [], nextDay: {} });
+  st.selectedIds = Array.from(document.querySelectorAll('#field_vehicle_section .used-vehicle-check:checked'))
+    .map(c => String(c.value || '').trim()).filter(Boolean);
+  const summaryEl = document.getElementById('field_vehicle_selected_summary');
+  if (summaryEl) {
+    const names = Array.from(document.querySelectorAll('#field_vehicle_section .used-vehicle-check:checked'))
+      .map(c => String(c.getAttribute('data-name') || c.value || '').trim()).filter(Boolean);
+    summaryEl.textContent = names.length ? ('選択中: ' + names.join('、')) : '未選択（軽トラ・車両を使った場合に選択）';
+    summaryEl.style.color = names.length ? '#00695C' : '#607D8B';
+    summaryEl.style.fontWeight = names.length ? 'bold' : 'normal';
+  }
+  if (typeof window.refreshWorkRecordNextDayKeiTruckUI_ === 'function') {
+    window.refreshWorkRecordNextDayKeiTruckUI_();
+  }
+};
+
+window.toggleWorkRecordVehiclePicker_ = () => {
+  const st = window._workRecordVehicleState || (window._workRecordVehicleState = { open: false, selectedIds: [], nextDay: {} });
+  st.selectedIds = Array.from(document.querySelectorAll('#field_vehicle_section .used-vehicle-check:checked'))
+    .map(c => String(c.value || '').trim()).filter(Boolean);
+  st.open = !st.open;
+  window.renderWorkRecordVehicleSection_(st.selectedIds);
+};
+
+window.syncWorkRecordNextDayVehicleDates_ = (workDateVal) => {
+  const vd = window.VehicleDispatch;
+  if (!vd) return;
+  const nextYmd = vd.addDaysYmd(workDateVal || vd.todayYmd(), 1);
+  const st = window._workRecordVehicleState || { nextDay: {} };
+  Object.keys(st.nextDay || {}).forEach(vid => {
+    const entry = st.nextDay[vid];
+    if (entry && !entry.dateTouched) entry.dateYmd = nextYmd;
+  });
+  document.querySelectorAll('.rec-nextday-truck-date').forEach(inp => {
+    if (inp.getAttribute('data-touched') !== '1') {
+      inp.value = nextYmd;
+    }
+  });
+  window.refreshWorkRecordNextDayKeiTruckUI_();
+};
+
+window.onWorkRecordNextDayTruckChange_ = (vid, field, value) => {
+  const vd = window.VehicleDispatch;
+  const key = vd ? vd.normalizeVehicleId(vid) : String(vid || '').trim();
+  if (!key) return;
+  const st = window._workRecordVehicleState || (window._workRecordVehicleState = { open: false, selectedIds: [], nextDay: {} });
+  st.nextDay = st.nextDay || {};
+  const workDate = document.getElementById('rec_work_date')?.value || (vd ? vd.todayYmd() : '');
+  const defDate = vd ? vd.addDaysYmd(workDate, 1) : '';
+  const cur = st.nextDay[key] || { enabled: false, dateYmd: defDate, dateTouched: false, note: '' };
+  if (field === 'enabled') {
+    cur.enabled = !!value;
+    if (!cur.dateYmd) cur.dateYmd = defDate;
+    st.nextDay[key] = cur;
+    window.refreshWorkRecordNextDayKeiTruckUI_();
+    return;
+  }
+  if (field === 'dateYmd') {
+    cur.dateYmd = String(value || defDate).slice(0, 10);
+    cur.dateTouched = true;
+    st.nextDay[key] = cur;
+    window.refreshWorkRecordNextDayKeiTruckUI_();
+    return;
+  }
+  if (field === 'note') {
+    cur.note = String(value || '');
+    st.nextDay[key] = cur;
+  }
+};
+
+window.refreshWorkRecordNextDayKeiTruckUI_ = () => {
+  const box = document.getElementById('field_vehicle_nextday_box');
+  const vd = window.VehicleDispatch;
+  if (!box || !vd) return;
+  const selected = window.collectWorkRecordSelectedVehicles_();
+  const trucks = selected.filter(v => vd.isKeiTruck(v));
+  if (!trucks.length) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const st = window._workRecordVehicleState || (window._workRecordVehicleState = { open: false, selectedIds: [], nextDay: {} });
+  st.nextDay = st.nextDay || {};
+  const workDate = document.getElementById('rec_work_date')?.value || vd.todayYmd();
+  const defNext = vd.addDaysYmd(workDate, 1);
+  const esc = vd.escHtml;
+  const me = vd.normUserKey(vd.currentUserName());
+
+  const rowsHtml = trucks.map(t => {
+    const vid = vd.normalizeVehicleId(t.id);
+    const label = vd.formatVehicleLabel(t);
+    const cur = st.nextDay[vid] || { enabled: false, dateYmd: defNext, dateTouched: false, note: '' };
+    const useDate = cur.dateYmd || defNext;
+    const dayRes = vd.getReservationsForDate(useDate).filter(r => vd.normalizeVehicleId(r.vehicleId) === vid);
+    const myRes = dayRes.find(r => vd.normUserKey(r.userName) === me);
+    const otherRes = dayRes.filter(r => vd.normUserKey(r.userName) !== me);
+    const hintParts = [];
+    if (myRes) hintParts.push(`<span style="color:#2E7D32; font-weight:bold;">✅ ${esc(vd.formatMdJa(useDate))} に登録済${myRes.note ? '（' + esc(myRes.note) + '）' : ''}</span>`);
+    if (otherRes.length) {
+      hintParts.push(`<span style="color:#E65100; font-weight:bold;">⚠️ 同日に他の希望あり: ${otherRes.map(r => esc(r.userName || '他スタッフ')).join('、')}</span>`);
+    }
+    const safeVid = esc(vid).replace(/'/g, "\\'");
+    return `
+      <div style="background:#FFF8E1; border:1px solid #FFB74D; border-radius:8px; padding:9px 10px; margin-top:6px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; font-weight:bold; color:#E65100;">
+          <input type="checkbox" class="rec-nextday-truck-check" data-veh-id="${esc(vid)}" ${cur.enabled ? 'checked' : ''} onchange="onWorkRecordNextDayTruckChange_('${safeVid}','enabled', this.checked)" style="width:17px; height:17px; flex-shrink:0;">
+          <span>🛻 次の日もこの軽トラを使う（${esc(label)}）</span>
+        </label>
+        ${hintParts.length ? `<div style="font-size:11px; margin:4px 0 0 25px; line-height:1.4;">${hintParts.join(' ／ ')}</div>` : ''}
+        <div style="display:${cur.enabled ? 'block' : 'none'}; margin-top:8px; padding-top:8px; border-top:1px dashed #FFCC80;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <div style="flex:0 0 150px;">
+              <label style="display:block; font-size:10px; color:#6D4C41; font-weight:bold; margin-bottom:2px;">使用予定日</label>
+              <input type="date" class="form-input rec-nextday-truck-date" data-veh-id="${esc(vid)}" data-touched="${cur.dateTouched ? '1' : '0'}" value="${esc(useDate)}" onchange="onWorkRecordNextDayTruckChange_('${safeVid}','dateYmd', this.value)" style="margin:0; padding:7px 8px; font-size:13px; font-weight:bold;">
+            </div>
+            <div style="flex:1; min-width:150px;">
+              <label style="display:block; font-size:10px; color:#6D4C41; font-weight:bold; margin-bottom:2px;">用途メモ（任意）</label>
+              <input type="text" class="form-input rec-nextday-truck-note" data-veh-id="${esc(vid)}" value="${esc(cur.note || '')}" placeholder="例: 朝イチ肥料運搬" oninput="onWorkRecordNextDayTruckChange_('${safeVid}','note', this.value)" style="margin:0; padding:7px 8px; font-size:13px;">
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  box.innerHTML = rowsHtml;
+  box.style.display = 'block';
+};
+
+window.collectWorkRecordNextDayReservations_ = (workDateVal) => {
+  const vd = window.VehicleDispatch;
+  if (!vd) return [];
+  const selected = window.collectWorkRecordSelectedVehicles_();
+  const trucks = selected.filter(v => vd.isKeiTruck(v));
+  const st = window._workRecordVehicleState || {};
+  const defNext = vd.addDaysYmd(workDateVal || vd.todayYmd(), 1);
+  const out = [];
+  trucks.forEach(t => {
+    const vid = vd.normalizeVehicleId(t.id);
+    const entry = st.nextDay && st.nextDay[vid];
+    if (!entry || !entry.enabled) return;
+    out.push({
+      dateYmd: vd.normYmd(entry.dateYmd || defNext) || defNext,
+      vehicleId: vid,
+      vehicleName: vd.formatVehicleLabel(t),
+      vehicleType: String(t.vehicleType || t.type || '軽トラ').trim() || '軽トラ',
+      plateNumber: String(t.plateNumber || '').trim(),
+      note: String(entry.note || '').trim(),
+      source: 'work_record'
+    });
+  });
+  return out;
+};
+
+window.renderWorkRecordVehicleSection_ = async (selectedRefs) => {
+  const section = document.getElementById('field_vehicle_section');
+  const vd = window.VehicleDispatch;
+  if (!section || !vd) return;
+
+  const st = window._workRecordVehicleState || (window._workRecordVehicleState = { open: false, selectedIds: [], nextDay: {} });
+  if (Array.isArray(selectedRefs)) {
+    st.selectedIds = selectedRefs.map(r => vd.normalizeVehicleId(typeof r === 'string' ? r : (r && (r.id || r.vehicleId || r.name)))).filter(Boolean);
+    if (st.selectedIds.length) st.open = true;
+  }
+
+  if (!window._mobileVehiclesLoaded) {
+    vd.ensureVehiclesLoaded().then(() => {
+      if (document.getElementById('field_vehicle_section')) {
+        window.renderWorkRecordVehicleSection_();
+      }
+    }).catch(() => {});
+  }
+  vd.loadReservations().then(() => {
+    if (document.getElementById('field_vehicle_section')) {
+      window.refreshWorkRecordNextDayKeiTruckUI_();
+    }
+  }).catch(() => {});
+
+  const vehicles = vd.listVehicles({ sortKeiTruckFirst: true });
+  const selectedSet = new Set((st.selectedIds || []).map(x => vd.normalizeVehicleId(x)));
+  const esc = vd.escHtml;
+  const selectedNames = vehicles
+    .filter(v => selectedSet.has(vd.normalizeVehicleId(v.id)) || selectedSet.has(vd.formatVehicleLabel(v)) || selectedSet.has(String(v.plateNumber || '')))
+    .map(v => vd.formatVehicleLabel(v));
+
+  const chipsHtml = vehicles.length
+    ? vehicles.map(v => {
+      const vid = vd.normalizeVehicleId(v.id);
+      const label = vd.formatVehicleLabel(v);
+      const vType = String(v.vehicleType || v.type || '').trim();
+      const plate = String(v.plateNumber || v.vehicleNumber || '').trim();
+      const checked = selectedSet.has(vid) || selectedSet.has(label) || (plate && selectedSet.has(plate));
+      const icon = vd.isKeiTruck(v) ? '🛻' : '🚐';
+      const loc = String(v.location || '').trim();
+      return `<label style="display:inline-flex; align-items:center; gap:5px; padding:6px 10px; border-radius:16px; border:1px solid ${checked ? '#00897B' : '#B2DFDB'}; background:${checked ? '#B2DFDB' : '#fff'}; color:#004D40; font-size:12px; font-weight:${checked ? 'bold' : 'normal'}; cursor:pointer;">
+        <input type="checkbox" class="used-vehicle-check" value="${esc(vid)}" data-name="${esc(label)}" data-vehicle-type="${esc(vType)}" data-plate="${esc(plate)}" ${checked ? 'checked' : ''} onchange="onWorkRecordVehicleCheckChange_(this)">
+        <span>${icon} ${esc(label)}</span>${loc ? `<span style="font-size:10px; color:#546E7A;">(📍${esc(loc)})</span>` : ''}
+      </label>`;
+    }).join('')
+    : `<div style="font-size:12px; color:#607D8B;">登録された車両がありません（車両マスタから追加できます）</div>`;
+
+  section.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <div style="min-width:0; flex:1;">
+        <div style="font-weight:bold; color:#00695C; font-size:13px;">🛻 使用車両（軽トラ等・任意）</div>
+        <div id="field_vehicle_selected_summary" style="font-size:11px; color:${selectedNames.length ? '#00695C' : '#607D8B'}; font-weight:${selectedNames.length ? 'bold' : 'normal'}; margin-top:2px;">
+          ${selectedNames.length ? ('選択中: ' + esc(selectedNames.join('、'))) : '未選択（軽トラ・車両を使った場合に選択）'}
+        </div>
+      </div>
+      <button type="button" onclick="toggleWorkRecordVehiclePicker_()" style="flex-shrink:0; background:#fff; color:#00695C; border:1px solid #00897B; border-radius:8px; padding:5px 10px; font-size:11px; font-weight:bold; cursor:pointer;">
+        ${st.open ? '閉じる ▲' : '車両を選ぶ ▼'}
+      </button>
+    </div>
+    <div style="display:${st.open ? 'flex' : 'none'}; flex-wrap:wrap; gap:6px; margin-top:8px; padding-top:8px; border-top:1px dashed #80CBC4; max-height:170px; overflow-y:auto;">
+      ${chipsHtml}
+    </div>
+    <div id="field_vehicle_nextday_box" style="display:none; margin-top:8px;"></div>
+  `;
+  window.refreshWorkRecordNextDayKeiTruckUI_();
+};
+
+window.buildBulkWorkMemoVehicleSectionHtml_ = (d, uid) => {
+  const vd = window.VehicleDispatch;
+  if (!d || !vd) return '';
+  const esc = vd.escHtml;
+  const vehicles = vd.listVehicles({ sortKeiTruckFirst: true });
+  const used = Array.isArray(d.usedVehicles) ? d.usedVehicles.filter(v => v && (v.id || v.name)) : [];
+  const selectedIds = new Set(used.map(v => vd.normalizeVehicleId(v.id || v.name)));
+  const workYmd = String(window._bulkWorkMemoDate || (typeof window.getBulkWorkMemoTodayYmd_ === 'function' ? window.getBulkWorkMemoTodayYmd_() : vd.todayYmd())).slice(0, 10);
+  const defNextYmd = vd.addDaysYmd(workYmd, 1);
+
+  const selectedTrucks = vd.resolveKeiTrucksFromUsed(used);
+  const nextDayHtml = selectedTrucks.length ? selectedTrucks.map(t => {
+    const vid = vd.normalizeVehicleId(t.id);
+    const label = vd.formatVehicleLabel(t);
+    const ndMap = d.nextDayVehicles || {};
+    const cur = ndMap[vid] || { enabled: false, dateYmd: defNextYmd, dateTouched: false, note: '' };
+    const useDate = cur.dateYmd || defNextYmd;
+    const safeUid = esc(uid).replace(/'/g, "\\'");
+    const safeVid = esc(vid).replace(/'/g, "\\'");
+    const dayRes = vd.getReservationsForDate(useDate).filter(r => vd.normalizeVehicleId(r.vehicleId) === vid);
+    const me = vd.normUserKey(vd.currentUserName());
+    const otherRes = dayRes.filter(r => vd.normUserKey(r.userName) !== me);
+    return `
+      <div style="margin-top:6px; padding:8px 10px; background:#FFF8E1; border:1px solid #FFB74D; border-radius:8px;">
+        <label style="display:flex; align-items:center; gap:7px; cursor:pointer; font-size:12px; font-weight:bold; color:#E65100;">
+          <input type="checkbox" ${cur.enabled ? 'checked' : ''} onchange="toggleBulkWorkMemoNextDayVehicle_('${safeUid}','${safeVid}', this.checked, '${esc(defNextYmd)}')" style="width:16px; height:16px; flex-shrink:0;">
+          <span>🛻 次の日も使う（${esc(label)}）</span>
+        </label>
+        ${otherRes.length ? `<div style="font-size:10px; color:#E65100; margin:3px 0 0 23px;">⚠️ ${esc(vd.formatMdJa(useDate))} に他の希望: ${otherRes.map(r => esc(r.userName || '')).join('、')}</div>` : ''}
+        <div style="display:${cur.enabled ? 'flex' : 'none'}; gap:6px; flex-wrap:wrap; margin-top:6px; padding-top:6px; border-top:1px dashed #FFCC80;">
+          <input type="date" value="${esc(useDate)}" onchange="updateBulkWorkMemoNextDayVehicleField_('${safeUid}','${safeVid}','dateYmd', this.value)" style="flex:0 0 140px; padding:6px 8px; border:1px solid #FFB74D; border-radius:6px; font-size:12px; font-weight:bold; background:#fff;">
+          <input type="text" value="${esc(cur.note || '')}" placeholder="用途メモ（任意）" oninput="updateBulkWorkMemoNextDayVehicleField_('${safeUid}','${safeVid}','note', this.value)" style="flex:1; min-width:130px; padding:6px 8px; border:1px solid #FFB74D; border-radius:6px; font-size:12px; background:#fff;">
+        </div>
+      </div>`;
+  }).join('') : '';
+
+  const safeUidAttr = esc(uid).replace(/'/g, "\\'");
+  if (!d._vehiclePickOpen && !used.length) {
+    return `<div style="margin:8px 0;">
+      <button type="button" onclick="toggleBulkWorkMemoVehiclePick_('${safeUidAttr}')" style="width:100%; box-sizing:border-box; padding:8px 10px; border-radius:8px; border:1px solid #80CBC4; background:#fff; color:#00695C; font-weight:bold; font-size:12px; cursor:pointer; text-align:left;">▶ 🛻 使用車両（軽トラ等・任意）</button>
+    </div>`;
+  }
+  if (!d._vehiclePickOpen && used.length) {
+    const valStr = used.map(v => v.name || v.id).filter(Boolean).join('、');
+    return `<div style="margin:8px 0;">
+      ${window.buildBulkWorkMemoCollapsedPickHtml_({
+        icon: '🛻',
+        label: '使用車両',
+        value: valStr,
+        uid: uid,
+        toggleFn: 'toggleBulkWorkMemoVehiclePick_',
+        toggleLabel: '追加・変更',
+        borderColor: '#80CBC4',
+        bgColor: '#E0F2F1',
+        textColor: '#00695C'
+      })}
+      ${nextDayHtml}
+    </div>`;
+  }
+
+  const chips = vehicles.length
+    ? vehicles.map(v => {
+      const vid = vd.normalizeVehicleId(v.id);
+      const label = vd.formatVehicleLabel(v);
+      const on = selectedIds.has(vid) || used.some(u => String(u.name || '') === label);
+      const icon = vd.isKeiTruck(v) ? '🛻' : '🚐';
+      const safeVid = esc(vid).replace(/'/g, "\\'");
+      const safeLabel = esc(label).replace(/'/g, "\\'");
+      return `<label style="display:inline-flex; align-items:center; gap:5px; padding:6px 10px; border-radius:14px; font-size:12px; cursor:pointer; border:1px solid ${on ? '#00897B' : '#B2DFDB'}; background:${on ? '#B2DFDB' : '#fff'}; color:#004D40; font-weight:${on ? 'bold' : 'normal'};">
+        <input type="checkbox" ${on ? 'checked' : ''} onchange="toggleBulkWorkMemoVehicle_('${safeUidAttr}','${safeVid}','${safeLabel}', this.checked)" style="margin:0;">
+        <span>${icon} ${esc(label)}</span>
+      </label>`;
+    }).join('')
+    : `<div style="font-size:11px; color:#607D8B;">登録された車両がありません</div>`;
+
+  return `<div style="margin:8px 0; padding:10px 12px; border:1.5px solid #80CBC4; border-radius:10px; background:#E0F2F1; box-sizing:border-box;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+      <div style="font-size:12px; font-weight:bold; color:#00695C;">🛻 使用車両（軽トラ等・任意）</div>
+      <button type="button" onclick="collapseBulkWorkMemoVehiclePick_('${safeUidAttr}')" style="background:#fff; color:#00695C; border:1px solid #00897B; border-radius:8px; padding:4px 10px; font-size:11px; font-weight:bold; cursor:pointer;">完了</button>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px; max-height:170px; overflow-y:auto;">${chips}</div>
+    ${nextDayHtml}
+  </div>`;
+};
+
+window.toggleBulkWorkMemoVehiclePick_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._vehiclePickOpen = true;
+  if (window.VehicleDispatch && !window._mobileVehiclesLoaded) {
+    window.VehicleDispatch.ensureVehiclesLoaded().then(() => {
+      if (typeof window.refreshBulkWorkMemoExtras_ === 'function') window.refreshBulkWorkMemoExtras_(uid);
+    }).catch(() => {});
+  }
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.collapseBulkWorkMemoVehiclePick_ = (uid) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  if (!row) return;
+  row._vehiclePickOpen = false;
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.toggleBulkWorkMemoVehicle_ = (uid, vid, vname, checked) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const vd = window.VehicleDispatch;
+  if (!row) return;
+  const normId = vd ? vd.normalizeVehicleId(vid) : String(vid || '').trim();
+  const matched = vd ? vd.findVehicleByRef({ id: normId, name: vname }) : null;
+  const label = matched ? vd.formatVehicleLabel(matched) : String(vname || normId).trim();
+  if (!Array.isArray(row.usedVehicles)) row.usedVehicles = [];
+  if (checked) {
+    if (!row.usedVehicles.some(v => (vd ? vd.normalizeVehicleId(v.id) : String(v.id || '')) === normId || String(v.name || '') === label)) {
+      row.usedVehicles.push({
+        id: normId,
+        name: label,
+        plateNumber: matched ? String(matched.plateNumber || '').trim() : '',
+        vehicleType: matched ? String(matched.vehicleType || matched.type || '').trim() : ''
+      });
+    }
+  } else {
+    row.usedVehicles = row.usedVehicles.filter(v => (vd ? vd.normalizeVehicleId(v.id) : String(v.id || '')) !== normId && String(v.name || '') !== label);
+    if (row.nextDayVehicles && row.nextDayVehicles[normId]) {
+      delete row.nextDayVehicles[normId];
+    }
+  }
+  row._vehiclePickOpen = true;
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.toggleBulkWorkMemoNextDayVehicle_ = (uid, vid, checked, defaultDate) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const vd = window.VehicleDispatch;
+  if (!row) return;
+  const normId = vd ? vd.normalizeVehicleId(vid) : String(vid || '').trim();
+  if (!row.nextDayVehicles || typeof row.nextDayVehicles !== 'object') row.nextDayVehicles = {};
+  const cur = row.nextDayVehicles[normId] || { enabled: false, dateYmd: defaultDate || (vd ? vd.tomorrowYmd() : ''), dateTouched: false, note: '' };
+  cur.enabled = !!checked;
+  if (!cur.dateYmd) cur.dateYmd = defaultDate || (vd ? vd.tomorrowYmd() : '');
+  row.nextDayVehicles[normId] = cur;
+  window.refreshBulkWorkMemoExtras_(uid);
+};
+
+window.updateBulkWorkMemoNextDayVehicleField_ = (uid, vid, field, value) => {
+  const row = (window._bulkWorkMemoDrafts || []).find(d => d && d._uid === uid);
+  const vd = window.VehicleDispatch;
+  if (!row) return;
+  const normId = vd ? vd.normalizeVehicleId(vid) : String(vid || '').trim();
+  if (!row.nextDayVehicles || typeof row.nextDayVehicles !== 'object') row.nextDayVehicles = {};
+  const cur = row.nextDayVehicles[normId] || { enabled: true, dateYmd: vd ? vd.tomorrowYmd() : '', dateTouched: false, note: '' };
+  if (field === 'dateYmd') {
+    cur.dateYmd = String(value || '').slice(0, 10);
+    cur.dateTouched = true;
+  } else if (field === 'note') {
+    cur.note = String(value || '');
+  }
+  row.nextDayVehicles[normId] = cur;
+};
+
+window.buildBulkWorkMemoConfirmNextDayTruckHtml_ = (drafts, ymd) => {
+  const vd = window.VehicleDispatch;
+  if (!vd) return '';
+  const esc = vd.escHtml;
+  const defNextYmd = vd.addDaysYmd(ymd || vd.todayYmd(), 1);
+  const trucks = vd.listVehicles({ keiTruckOnly: true });
+  const usedTrucks = [];
+  const seenUsed = new Set();
+  const draftEnabled = [];
+  (Array.isArray(drafts) ? drafts : []).forEach(d => {
+    if (!d) return;
+    const resolved = vd.resolveKeiTrucksFromUsed((d.usedVehicles || []).concat(d.usedMachines || []));
+    resolved.forEach(t => {
+      const vid = vd.normalizeVehicleId(t.id);
+      if (vid && !seenUsed.has(vid)) { seenUsed.add(vid); usedTrucks.push(t); }
+    });
+    const nd = d.nextDayVehicles || {};
+    Object.keys(nd).forEach(vid => {
+      const e = nd[vid];
+      if (!e || !e.enabled) return;
+      const matched = vd.findVehicleByRef({ id: vid });
+      draftEnabled.push({
+        vehicleId: vid,
+        vehicleName: matched ? vd.formatVehicleLabel(matched) : vid,
+        vehicleType: (matched && (matched.vehicleType || matched.type)) || '軽トラ',
+        plateNumber: (matched && matched.plateNumber) || '',
+        dateYmd: e.dateTouched ? (e.dateYmd || defNextYmd) : defNextYmd,
+        note: e.note || ''
+      });
+    });
+  });
+
+  if (!window._bulkConfirmNextDayTruck || window._bulkConfirmNextDayTruck._baseYmd !== ymd) {
+    const firstEnabled = draftEnabled[0] || null;
+    const defaultTruck = firstEnabled
+      ? { id: firstEnabled.vehicleId }
+      : (usedTrucks[0] || trucks[0] || null);
+    window._bulkConfirmNextDayTruck = {
+      _baseYmd: ymd,
+      enabled: !!firstEnabled,
+      vehicleId: defaultTruck ? vd.normalizeVehicleId(defaultTruck.id) : '',
+      dateYmd: firstEnabled ? firstEnabled.dateYmd : defNextYmd,
+      note: firstEnabled ? firstEnabled.note : ''
+    };
+  }
+  const st = window._bulkConfirmNextDayTruck;
+  const allOptions = trucks.length ? trucks : vd.listVehicles({ sortKeiTruckFirst: true });
+  if (!allOptions.length && !draftEnabled.length) return '';
+
+  const optsHtml = '<option value="">軽トラを選択...</option>' + allOptions.map(v => {
+    const vid = vd.normalizeVehicleId(v.id);
+    const label = vd.formatVehicleLabel(v);
+    return `<option value="${esc(vid)}" ${vid === st.vehicleId ? 'selected' : ''}>${esc(label)}</option>`;
+  }).join('');
+
+  const extraSummary = draftEnabled.length > 1
+    ? `<div style="font-size:11px; color:#E65100; margin-top:6px;">※ 各作業でチェックされた台数: ${draftEnabled.length}件</div>`
+    : '';
+
+  return `<div style="margin-top:10px; padding:10px; background:#FFF3E0; border:1px solid #FFB74D; border-radius:8px;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:12px; font-weight:bold; color:#E65100;">
+      <input type="checkbox" id="bulk_confirm_nextday_truck_enabled" ${st.enabled ? 'checked' : ''} onchange="if(window._bulkConfirmNextDayTruck) window._bulkConfirmNextDayTruck.enabled=this.checked; var box=document.getElementById('bulk_confirm_nextday_truck_fields'); if(box) box.style.display=this.checked?'block':'none';" style="width:17px; height:17px; flex-shrink:0;">
+      <span>🛻 次の日も軽トラを使う（任意）</span>
+    </label>
+    ${extraSummary}
+    <div id="bulk_confirm_nextday_truck_fields" style="display:${st.enabled ? 'block' : 'none'}; margin-top:8px; padding-top:8px; border-top:1px dashed #FFCC80;">
+      <select id="bulk_confirm_nextday_truck_vehicle" class="form-input" onchange="if(window._bulkConfirmNextDayTruck) window._bulkConfirmNextDayTruck.vehicleId=this.value;" style="margin:0 0 6px; font-size:13px;">
+        ${optsHtml}
+      </select>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <input type="date" id="bulk_confirm_nextday_truck_date" class="form-input" value="${esc(st.dateYmd || defNextYmd)}" onchange="if(window._bulkConfirmNextDayTruck) window._bulkConfirmNextDayTruck.dateYmd=this.value;" style="flex:0 0 145px; margin:0; font-size:13px; font-weight:bold;">
+        <input type="text" id="bulk_confirm_nextday_truck_note" class="form-input" value="${esc(st.note || '')}" placeholder="用途メモ（任意）" oninput="if(window._bulkConfirmNextDayTruck) window._bulkConfirmNextDayTruck.note=this.value;" style="flex:1; min-width:130px; margin:0; font-size:13px;">
+      </div>
+    </div>
+  </div>`;
+};
+
+window.collectBulkConfirmNextDayTruckEntries_ = (drafts, ymd) => {
+  const vd = window.VehicleDispatch;
+  if (!vd) return [];
+  const defNextYmd = vd.addDaysYmd(ymd || vd.todayYmd(), 1);
+  const byKey = {};
+  (Array.isArray(drafts) ? drafts : []).forEach(d => {
+    if (!d || !d.nextDayVehicles) return;
+    Object.keys(d.nextDayVehicles).forEach(vid => {
+      const e = d.nextDayVehicles[vid];
+      if (!e || !e.enabled) return;
+      const normId = vd.normalizeVehicleId(vid);
+      const matched = vd.findVehicleByRef({ id: normId });
+      const dateYmd = vd.normYmd(e.dateTouched ? (e.dateYmd || defNextYmd) : defNextYmd) || defNextYmd;
+      byKey[dateYmd + '|' + normId] = {
+        dateYmd: dateYmd,
+        vehicleId: normId,
+        vehicleName: matched ? vd.formatVehicleLabel(matched) : normId,
+        vehicleType: (matched && (matched.vehicleType || matched.type)) || '軽トラ',
+        plateNumber: (matched && matched.plateNumber) || '',
+        note: String(e.note || '').trim(),
+        source: 'bulk_record'
+      };
+    });
+  });
+  const cb = document.getElementById('bulk_confirm_nextday_truck_enabled');
+  if (cb) {
+    if (cb.checked) {
+      const vehId = vd.normalizeVehicleId(document.getElementById('bulk_confirm_nextday_truck_vehicle')?.value || '');
+      const dateYmd = vd.normYmd(document.getElementById('bulk_confirm_nextday_truck_date')?.value || defNextYmd) || defNextYmd;
+      const note = String(document.getElementById('bulk_confirm_nextday_truck_note')?.value || '').trim();
+      if (vehId) {
+        const matched = vd.findVehicleByRef({ id: vehId });
+        byKey[dateYmd + '|' + vehId] = {
+          dateYmd: dateYmd,
+          vehicleId: vehId,
+          vehicleName: matched ? vd.formatVehicleLabel(matched) : vehId,
+          vehicleType: (matched && (matched.vehicleType || matched.type)) || '軽トラ',
+          plateNumber: (matched && matched.plateNumber) || '',
+          note: note,
+          source: 'bulk_record'
+        };
+      }
+    }
+  }
+  return Object.keys(byKey).map(k => byKey[k]);
 };
 
 window.isDieselFuelMachine_ = (m) => {
@@ -31913,6 +33320,7 @@ window.renderRecordForm = () => {
   // 作業記録の新規作成時は圃場を自動選択しない（手動選択のみ）
   selectedPolyIds = (isEdit || currentRecordType !== 'work') && activePolyId ? [String(activePolyId)] : []; pendingFiles = [];
   window._deliveryOrigin = null;
+  window._workRecordVehicleState = { open: false, selectedIds: [], nextDay: {} };
   const addBtnStyle = ''; // ★変更：編集時もボタンを常に表示する！
   let tgt = null; existingUrlsInEdit = [];
   if (isEdit) {
@@ -32222,6 +33630,7 @@ window.renderRecordForm = () => {
                   <label class="form-label">👤 ユーザー名</label><input type="text" class="form-input" value="${currentUser}" readonly style="background:#f4f6f8; color:#666;">
                   <div id="work_assoc_suggest" style="display:none; background:#E8F5E9; border:1px solid #A5D6A7; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="field_machinery_section" style="display:none; background:#FFF3E0; border:1px solid #FFE0B2; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
+                  <div id="field_vehicle_section" style="background:#E0F2F1; border:1px solid #80CBC4; border-radius:10px; padding:12px; margin-bottom:12px;"></div>
                   <div id="work_member_section" style="display:none; margin-bottom:12px;"></div>
                   <div id="prep_target_work_section" style="display:none; background:#f3e5f5; border:1px solid #ce93d8; border-radius:8px; padding:12px; margin-bottom:15px;"></div>
                   <div id="delivery_destination_section" style="display:none; background:#E1F5FE; border:2px solid #0288D1; border-radius:10px; padding:12px; margin-bottom:15px;"></div>
@@ -32485,6 +33894,9 @@ window.renderRecordForm = () => {
     if (typeof window.refreshWorkRecordStepUI_ === 'function') {
       try { window.refreshWorkRecordStepUI_(); } catch (e) { }
     }
+    if (!isEdit && typeof window.renderWorkRecordVehicleSection_ === 'function') {
+      try { window.renderWorkRecordVehicleSection_([]); } catch (e) { }
+    }
   }, 50);
 
   if (currentRecordType === 'work') setTimeout(() => {
@@ -32726,6 +34138,16 @@ window.renderRecordForm = () => {
             window.renderConcurrentWorksSection_();
           }
         }, 60);
+      }
+
+      if (typeof window.renderWorkRecordVehicleSection_ === 'function') {
+        const initVehs = [].concat(
+          Array.isArray(d.usedVehicles) ? d.usedVehicles : [],
+          (Array.isArray(d.usedMachines) && window.VehicleDispatch)
+            ? window.VehicleDispatch.resolveVehiclesFromUsed(d.usedMachines)
+            : []
+        );
+        setTimeout(() => { try { window.renderWorkRecordVehicleSection_(initVehs); } catch (e) { } }, 75);
       }
 
       // ★追加：使ったもの（農機・資材）のチェックと数値を復元する処理
@@ -35802,6 +37224,14 @@ async function submitRecord() {
         id: chk.value || '',
         name: chk.getAttribute('data-name') || ''
       })).filter(machine => machine.id || machine.name);
+      const usedVehicles = (typeof window.collectWorkRecordSelectedVehicles_ === 'function')
+        ? window.collectWorkRecordSelectedVehicles_()
+        : [];
+      const pendingNextDayReservations = (!isEditBtn && typeof window.collectWorkRecordNextDayReservations_ === 'function')
+        ? window.collectWorkRecordNextDayReservations_(document.getElementById('rec_work_date')?.value || '')
+        : ((isEditBtn && typeof window.collectWorkRecordNextDayReservations_ === 'function')
+          ? window.collectWorkRecordNextDayReservations_(document.getElementById('rec_work_date')?.value || '')
+          : []);
       const ridgeProgress = (typeof window.collectRidgeProgressData === 'function') ? window.collectRidgeProgressData() : [];
       const firstRidge = ridgeProgress[0] || {};
 
@@ -35900,6 +37330,7 @@ async function submitRecord() {
           : (document.getElementById('rec_progress_status')?.value || ""),
         usedTools: "",
         usedMachines: usedMachines,
+        usedVehicles: usedVehicles,
         workMembers: savedWorkMembers,
         alsoSaveForMembers: alsoSaveForMembersFlag,
         workerCount: Math.max(1, uniqueWorkersForSave.size),
@@ -36472,6 +37903,14 @@ async function submitRecord() {
       window.updateInitDataCacheWithLocalRecords_();
     }
     closeRightPanel();
+
+    if (recordTypeSnap === 'work' && typeof pendingNextDayReservations !== 'undefined' && pendingNextDayReservations.length && window.VehicleDispatch) {
+      window.VehicleDispatch.saveReservationsBatch(pendingNextDayReservations).then(() => {
+        if (typeof window.showRecordSyncToast === 'function') {
+          window.showRecordSyncToast('🛻 翌日の軽トラ利用希望を登録しました', 'ok');
+        }
+      }).catch(err => console.warn('next-day vehicle reservation save failed', err));
+    }
 
     window.enqueueRecordSync_({
       localId: localId,
@@ -37983,7 +39422,11 @@ window.openScheduleList = () => {
           ? ('<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;' +
             (t.workStatus === 'planned' ? 'background:#e3f2fd;color:#1565c0;' : 'background:#eceff1;color:#546e7a;') + '">' + t.workStatusLabel + '</span>')
           : '';
-        if (stBadge) h += `<div style="margin-bottom:6px;">${stBadge}</div>`;
+        const aiUrg = (t.aiInstruction && t.aiInstruction.urgency) ? `（${t.aiInstruction.urgency}）` : '';
+        const aiBadge = t.isAiInstruction
+          ? `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:bold;background:#ede7f6;color:#5e35b1;border:1px solid #b39ddb;">🤖 AI作業指示${escapeHtmlFieldPhoto_(aiUrg)}</span>`
+          : '';
+        if (stBadge || aiBadge) h += `<div style="margin-bottom:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${stBadge}${aiBadge}</div>`;
       }
       h += `<div style="font-size:15px; font-weight:bold; color:${titleColor}; margin-bottom:8px;">${t.workName || '-'}</div>`;
       if (isMid) {
@@ -38001,14 +39444,19 @@ window.openScheduleList = () => {
       } else {
         h += `<div style="font-size:12px; color:#555; display:flex; justify-content:space-between;"><span>📅 予定: ${t.schedDate}</span><span style="${t.isOverdue || isProblem ? 'color:#d32f2f; font-weight:bold;' : ''}">期限: ${t.deadline}</span></div>`;
         if (t.person || t.hours) { h += `<div style="font-size:12px; color:#555; margin-top:8px; border-top:1px solid ${borderColor}; padding-top:8px;">担当: ${t.person || '-'} / 時間: ${t.hours ? t.hours + 'h' : '-'}</div>`; }
+        if (t.notes) {
+          h += `<div style="margin-top:8px;background:${t.isAiInstruction ? '#f5f0ff' : '#f8f9fa'};border:1px solid ${t.isAiInstruction ? '#d1c4e9' : '#e0e0e0'};border-radius:6px;padding:7px 9px;font-size:12px;color:${t.isAiInstruction ? '#311b92' : '#333'};line-height:1.45;white-space:pre-wrap;"><b>📋 指示内容</b>\n${escapeHtmlFieldPhoto_(t.notes)}</div>`;
+        }
         const taskUsers = Array.isArray(t.taskUsers) ? t.taskUsers : [];
         if (taskUsers.length) {
           const badges = taskUsers.map(u => {
-            const name = String(u.userName || u.userId || '').replace(/</g, '&lt;');
-            const doneStyle = u.done ? 'opacity:0.55;text-decoration:line-through;' : '';
+            const rawName = (typeof u === 'string') ? u : (u && (u.userName || u.userId)) || '';
+            const name = String(rawName).replace(/</g, '&lt;');
+            if (!name) return '';
+            const doneStyle = (u && typeof u === 'object' && u.done) ? 'opacity:0.55;text-decoration:line-through;' : '';
             return `<span style="display:inline-block;background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:bold;margin:2px 4px 0 0;${doneStyle}">👤 ${name}</span>`;
           }).join('');
-          h += `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed ${borderColor};"><div style="font-size:11px;color:#2e7d32;font-weight:bold;margin-bottom:4px;">タスク登録者</div><div>${badges}</div></div>`;
+          if (badges) h += `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed ${borderColor};"><div style="font-size:11px;color:#2e7d32;font-weight:bold;margin-bottom:4px;">タスク登録者</div><div>${badges}</div></div>`;
         }
       }
       h += `</div>`; return h;
@@ -42608,6 +44056,10 @@ window.openBulkWorkMemoModal_ = () => {
     if (typeof window.prefetchWorkTimeHints === 'function') {
       window.prefetchWorkTimeHints(keepDate, { applyToForm: false }).catch(() => { });
     }
+    if (window.VehicleDispatch) {
+      window.VehicleDispatch.ensureVehiclesLoaded().catch(() => { });
+      window.VehicleDispatch.loadReservations().catch(() => { });
+    }
   } catch (e) { }
   setTimeout(() => {
     const ta = document.getElementById('bulk_work_memo_text');
@@ -43777,18 +45229,23 @@ window.buildBulkWorkMemoFieldCandidatesHtml_ = (d, uid) => {
   const selected = new Set(window.getBulkWorkMemoPolyIds_(d));
   const tokenResults = Array.isArray(d.fieldTokenResults) ? d.fieldTokenResults : [];
   const blocks = [];
+  // トークンをまたいでも同じ圃場は1回だけ出す（ID優先、同名も1つにまとめる）
+  const seenPolyIds = new Set();
+  const seenPolyNames = new Set();
+  const normName_ = (name) => String(name || '').replace(/\s+/g, '').trim().toLowerCase();
 
   tokenResults.forEach(r => {
     const opts = (Array.isArray(r.options) ? r.options : []).filter(o => o && o.polyId && !selected.has(String(o.polyId)));
     if (!opts.length) return;
-    const seen = new Set();
     const uniqOpts = [];
     opts.forEach(o => {
       const pid = String(o.polyId);
-      if (!seen.has(pid)) {
-        seen.add(pid);
-        uniqOpts.push(o);
-      }
+      const nname = normName_(o.polyName || o.name || '');
+      if (seenPolyIds.has(pid)) return;
+      if (nname && seenPolyNames.has(nname)) return;
+      seenPolyIds.add(pid);
+      if (nname) seenPolyNames.add(nname);
+      uniqOpts.push(o);
     });
     if (!uniqOpts.length) return;
 
@@ -50296,6 +51753,9 @@ window.buildBulkWorkMemoExtrasHtml_ = (d, uid) => {
         targetDate: bulkDateYmd
       });
     }
+    if (typeof window.buildBulkWorkMemoVehicleSectionHtml_ === 'function') {
+      html += window.buildBulkWorkMemoVehicleSectionHtml_(d, uid);
+    }
     if (flags.showMaterial && typeof window.buildBulkWorkMemoAssetChipsHtml_ === 'function') {
       html += window.buildBulkWorkMemoAssetChipsHtml_({
         uid: uid,
@@ -53767,6 +55227,15 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
   const machines = (!isRest && Array.isArray(d.usedMachines) && d.usedMachines.length)
     ? `<div style="font-size:11px; color:#E65100; margin-top:4px;">🚜 ${d.usedMachines.map(m => m.name || m.id).filter(Boolean).map(s => esc(s)).join('、')}</div>`
     : '';
+  const vehicles = (!isRest && Array.isArray(d.usedVehicles) && d.usedVehicles.length)
+    ? `<div style="font-size:11px; color:#00695C; margin-top:4px;">🛻 ${d.usedVehicles.map(v => {
+      const vd = window.VehicleDispatch;
+      const vid = vd ? vd.normalizeVehicleId(v.id || v.name) : String(v.id || v.name || '');
+      const nd = d.nextDayVehicles && d.nextDayVehicles[vid];
+      const nextBadge = (nd && nd.enabled) ? ' <span style="background:#FFF3E0;color:#E65100;border:1px solid #FFB74D;border-radius:6px;padding:1px 5px;font-size:10px;font-weight:bold;">翌日も使用</span>' : '';
+      return esc(v.name || v.id) + nextBadge;
+    }).join('、')}</div>`
+    : '';
   const members = (!isRest && Array.isArray(d.workMembers) && d.workMembers.length)
     ? `<div style="font-size:11px; color:#0D47A1; margin-top:4px;">👥 ${d.workMembers.map(m => m.name || m.id).filter(Boolean).map(s => esc(s)).join('、')}${d.alsoSaveForMembers ? ' <span style="color:#2E7D32;">（各自の記録にも同時登録）</span>' : ''}</div>`
     : '';
@@ -53782,7 +55251,7 @@ window.buildBulkWorkMemoConfirmRowHtml_ = (d, index) => {
       ${metaNote}
       <div style="font-size:12px; color:#555; margin-top:4px;">🕒 ${esc(start)}〜${esc(end)}</div>
       <div style="font-size:11px; color:#666; margin-top:3px;">🌱 ${esc(crops)}　📍 ${esc(fieldNames)}</div>
-      ${regWorkHtml}${maint}${machines}${members}${fuelNote}${concurrent}
+      ${regWorkHtml}${maint}${machines}${vehicles}${members}${fuelNote}${concurrent}
     </div>`;
 };
 
@@ -54839,6 +56308,7 @@ window.renderBulkWorkMemoConfirmModal_ = (keepLunchState) => {
         ${lunchLine}
         ${gapHint}
         ${clockOutHint}
+        ${typeof window.buildBulkWorkMemoConfirmNextDayTruckHtml_ === 'function' ? window.buildBulkWorkMemoConfirmNextDayTruckHtml_(drafts, ymd) : ''}
       </div>
       <div style="font-size:11px; font-weight:bold; color:#555; margin-bottom:6px;">登録予定の作業</div>
       <div style="margin-bottom:12px;">${rows}</div>
@@ -55032,6 +56502,7 @@ window.executeBulkWorkMemoRegistration_ = async () => {
           ? window.formatBulkWorkMemoUsedToolsText_(d)
           : '',
         usedMachines: Array.isArray(d.usedMachines) ? d.usedMachines.filter(m => m && (m.id || m.name)) : [],
+        usedVehicles: Array.isArray(d.usedVehicles) ? d.usedVehicles.filter(v => v && (v.id || v.name)) : [],
         workMembers: (() => {
           const listM = Array.isArray(d.workMembers) ? d.workMembers.filter(m => m && (m.id || m.name)).map(m => ({
             id: String(m.id || m.name || '').trim(),
@@ -55309,6 +56780,13 @@ window.executeBulkWorkMemoRegistration_ = async () => {
     if (typeof window.recordBulkMemoWorkPickStatsFromDrafts_ === 'function') {
       try { window.recordBulkMemoWorkPickStatsFromDrafts_(drafts, 2); } catch (eStatSave) { }
     }
+    const bulkNextDayEntries = (typeof window.collectBulkConfirmNextDayTruckEntries_ === 'function')
+      ? window.collectBulkConfirmNextDayTruckEntries_(drafts, ymd)
+      : [];
+    if (bulkNextDayEntries.length && window.VehicleDispatch) {
+      window.VehicleDispatch.saveReservationsBatch(bulkNextDayEntries).catch(err => console.warn('bulk next-day truck save failed', err));
+    }
+    window._bulkConfirmNextDayTruck = null;
     if (typeof window.saveBulkWorkMemoHistoryEntry_ === 'function') {
       try {
         const preview = drafts.slice(0, 4).map(d => String(d.workName || d.rawLine || '').trim()).filter(Boolean).join(' / ');

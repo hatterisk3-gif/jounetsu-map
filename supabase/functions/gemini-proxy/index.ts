@@ -187,6 +187,7 @@ JSONのみ:
 }
 
 const ANALYSIS_TYPE_DESCRIPTIONS: Record<string, string> = {
+  work_instruction: "AI作業判断・作業指示（写真・メモ・圃場情報・直近の作業履歴・登録済み作業名マスターから、今行うべき作業の要否・優先度・実施日・期限・具体的な手順・必要資材を判断し、現場へそのまま出せる作業指示を作成する）",
   general: "総合診断（生育状態・栄養バランス・病害虫・環境要因・今後の管理ポイントをバランスよく診断）",
   pest_disease: "病害虫・生理障害・異常箇所の特定を最優先（葉の変色・斑点・害虫・水ストレス・生理障害の見分け方と原因候補を詳しく整理）",
   growth_compare: "複数枚・時系列での生育比較と変化分析（良化/悪化の傾向、栄養状態の推移、株間のばらつきを比較）",
@@ -195,6 +196,26 @@ const ANALYSIS_TYPE_DESCRIPTIONS: Record<string, string> = {
 
 const VALID_SEVERITIES = new Set(["良好", "経過観察", "注意", "要対応"]);
 const VALID_LEVELS = new Set(["高", "中", "低"]);
+const VALID_WORK_DECISIONS = new Set(["即時対応", "計画対応", "経過観察", "作業不要"]);
+const VALID_URGENCIES = new Set(["今日中", "3日以内", "1週間以内", "経過観察後"]);
+
+function sanitizeYmd(v: unknown): string {
+  const s = String(v || "").trim().replace(/\//g, "-");
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
+function defaultWorkDecisionFromSeverity(severity: string): string {
+  if (severity === "要対応") return "即時対応";
+  if (severity === "注意") return "計画対応";
+  if (severity === "良好") return "作業不要";
+  return "経過観察";
+}
+
+function defaultUrgencyFromPriority(priority: string): string {
+  if (priority === "高") return "今日中";
+  if (priority === "低") return "1週間以内";
+  return "3日以内";
+}
 
 function sanitizePhotoAnalysisResult(raw: unknown, model: string) {
   const obj = (raw && typeof raw === "object") ? (raw as Record<string, unknown>) : {};
@@ -204,6 +225,11 @@ function sanitizePhotoAnalysisResult(raw: unknown, model: string) {
     const s = String(v || "").trim();
     return VALID_LEVELS.has(s) ? s : "中";
   };
+
+  const decisionRaw = String(obj.workDecision || "").trim();
+  const workDecision = VALID_WORK_DECISIONS.has(decisionRaw)
+    ? decisionRaw
+    : defaultWorkDecisionFromSeverity(severity);
 
   const observations = Array.isArray(obj.observations)
     ? obj.observations
@@ -237,6 +263,43 @@ function sanitizePhotoAnalysisResult(raw: unknown, model: string) {
       .filter((x) => x.action.length > 0 || x.detail.length > 0)
     : [];
 
+  const workInstructions = Array.isArray(obj.workInstructions)
+    ? obj.workInstructions
+      .slice(0, 6)
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === "object")
+      .map((x) => {
+        const priority = pickLevel(x.priority);
+        const urgencyRaw = String(x.urgency || "").trim();
+        const urgency = VALID_URGENCIES.has(urgencyRaw)
+          ? urgencyRaw
+          : defaultUrgencyFromPriority(priority);
+        const workName = String(x.workName || "").trim().slice(0, 60);
+        const title = String(x.title || "").trim().slice(0, 80);
+        const steps = Array.isArray(x.steps)
+          ? x.steps.map((s) => String(s || "").trim()).filter(Boolean).slice(0, 6)
+          : [];
+        const materials = Array.isArray(x.materials)
+          ? x.materials.map((m) => String(m || "").trim()).filter(Boolean).slice(0, 6)
+          : [];
+        return {
+          workName: workName || title,
+          title: title || workName,
+          priority,
+          urgency,
+          suggestedDate: sanitizeYmd(x.suggestedDate),
+          deadlineDate: sanitizeYmd(x.deadlineDate),
+          estimatedHours: String(x.estimatedHours || "").trim().slice(0, 20),
+          cropName: String(x.cropName || "").trim().slice(0, 40),
+          targetArea: String(x.targetArea || "").trim().slice(0, 80),
+          reason: String(x.reason || "").trim().slice(0, 240),
+          steps,
+          materials,
+          caution: String(x.caution || "").trim().slice(0, 200),
+        };
+      })
+      .filter((x) => x.workName.length > 0 || x.title.length > 0)
+    : [];
+
   const checkPoints = Array.isArray(obj.checkPoints)
     ? obj.checkPoints.map((x) => String(x || "").trim()).filter(Boolean)
     : [];
@@ -245,10 +308,12 @@ function sanitizePhotoAnalysisResult(raw: unknown, model: string) {
     title: String(obj.title || "圃場写真AI診断").trim().slice(0, 60),
     summary: String(obj.summary || "").trim(),
     severity,
+    workDecision,
     cropGuessed: String(obj.cropGuessed || "").trim(),
     observations,
     possibleCauses,
     recommendedActions,
+    workInstructions,
     checkPoints,
     followUpNote: String(obj.followUpNote || "").trim(),
     analyzedAt: formatJstTimestamp(),
@@ -279,6 +344,38 @@ async function handleAnalyzeFieldPhotosWithGemini(
   const analysisFocus = ANALYSIS_TYPE_DESCRIPTIONS[analysisType] || ANALYSIS_TYPE_DESCRIPTIONS.general;
   const userQuestion = String(params.userQuestion || "").trim();
   const includeMemo = params.includeMemo !== false;
+  const fallbackTodayYmd = formatJstTimestamp().slice(0, 10).replace(/\//g, "-");
+  const todayYmd = sanitizeYmd(params.todayYmd) || fallbackTodayYmd;
+
+  const workMasterItems = (Array.isArray(params.workMaster) ? params.workMaster : [])
+    .slice(0, 60)
+    .map((w) => {
+      if (typeof w === "string") return w.trim();
+      if (w && typeof w === "object") {
+        const rec = w as Record<string, unknown>;
+        const name = String(rec.name || "").trim();
+        const cat = String(rec.category || rec.dept || "").trim();
+        return name ? (cat ? `${name}（${cat}）` : name) : "";
+      }
+      return "";
+    })
+    .filter(Boolean);
+
+  const recentWorkLines = (Array.isArray(params.recentWorks) ? params.recentWorks : [])
+    .slice(0, 12)
+    .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+    .map((r) => {
+      const bits: string[] = [];
+      if (r.date) bits.push(String(r.date).trim());
+      if (r.type) bits.push(`[${String(r.type).trim()}]`);
+      if (r.workName) bits.push(`作業:${String(r.workName).trim()}`);
+      if (r.crop) bits.push(`作物:${String(r.crop).trim()}`);
+      if (r.progress) bits.push(`進捗:${String(r.progress).trim()}`);
+      if (r.memo) bits.push(`メモ:${String(r.memo).trim().slice(0, 80)}`);
+      if (r.author) bits.push(`(${String(r.author).trim()})`);
+      return bits.length ? `- ${bits.join(" ")}` : "";
+    })
+    .filter(Boolean);
 
   const fieldLines: string[] = [];
   if (fieldName) fieldLines.push(`- 圃場名: ${fieldName}`);
@@ -298,7 +395,10 @@ async function handleAnalyzeFieldPhotosWithGemini(
     return `- ${bits.join(" / ")}`;
   });
 
-  const prompt = `あなたは熟練の日本の営農指導員・植物医師です。添付された圃場・作物の写真を観察し、農業現場で実務に役立つ日本語の診断レポートをJSONのみで出力してください。
+  const prompt = `あなたは熟練の日本の営農指導員・植物医師兼農場長です。添付された圃場・作物の写真と圃場情報・作業履歴を総合的に分析し、農業現場で実務に役立つ日本語の診断レポートと「作業予定へそのまま登録できる具体的な作業指示」をJSONのみで出力してください。
+
+【本日の日付】
+${todayYmd}
 
 【分析の重点】
 ${analysisFocus}
@@ -306,24 +406,53 @@ ${analysisFocus}
 【圃場情報】
 ${fieldLines.length ? fieldLines.join("\n") : "- 特記なし"}
 
+【登録済み作業名マスター（workInstructions の workName は原則この一覧から最も適切なものを選ぶ）】
+${workMasterItems.length ? workMasterItems.join(" / ") : "- 指定なし（一般的な農業作業名を使用）"}
+
+【この圃場の直近の作業・生育履歴（直近に同じ作業が実施済みの場合は重複指示を避け、追加対応が必要な場合のみ根拠を明記すること）】
+${recentWorkLines.length ? recentWorkLines.join("\n") : "- 直近の履歴なし"}
+
 【添付写真のメタ情報（計${validImages.length}枚）】
 ${photoMetaLines.join("\n")}
 
 ${userQuestion ? `【ユーザーからの気になる点・質問】\n${userQuestion}\n` : ""}
-【重要な観察・安全ルール】
+【重要な観察・判断・安全ルール】
 1. 写真上に手書きの赤丸・矢印・文字などのマーキングがある場合は、その印が付いた部位を最優先で詳しく観察し、添付メモがあれば内容と照合してください。
 2. 映像から断定できない病害虫名・栄養欠乏・障害を1つに決めつけず、根拠を示したうえで可能性のある要因を挙げてください。
 3. 未確認の登録農薬名・希釈倍率・適用作物を捏造して断定しないでください。農薬散布に言及する場合は「対象作物に登録のある適用薬剤をラベル・農薬登録情報で確認のうえ使用」と明記し、耕種的防除や施肥・潅水・環境改善も含めて実践的に提案してください。
-4. 出力は下記のJSON形式のみ（コードブロックや前置き文章は不要）。
+4. 作業判断（workDecision）と作業指示（workInstructions）の作成ルール：
+   - 本日の日付（${todayYmd}）を基準に、suggestedDate（実施予定日）と deadlineDate（期限日）を YYYY-MM-DD 形式で具体的に設定する。
+   - 作業が必要な場合は workInstructions に 1〜4件の具体的かつ実行可能な作業指示を作成する。作業不要（良好）の場合は空配列 [] または軽い見回り確認 1件のみにする。
+   - 各作業指示の workName は、可能な限り上記の「登録済み作業名マスター」から最も合致する作業名（括弧の部署名は除く）を選ぶこと。マスターに該当がなければ短い作業名（例：追肥、病害虫防除、除草、排水対策、見回り確認）を付ける。
+   - steps は作業者が迷わず動ける 2〜4 個の簡潔な手順、materials は必要な資材・道具（未確認薬剤名は断定せず「対象作物適用薬剤（ラベル確認）」のように記載）にする。
+5. 出力は下記のJSON形式のみ（コードブロックや前置き文章は不要）。
 
 {
   "title": "短い診断タイトル（30文字以内）",
-  "summary": "全体の総合所見（2〜4文）",
+  "summary": "全体の総合所見と作業判断の要約（2〜4文）",
   "severity": "良好 | 経過観察 | 注意 | 要対応",
+  "workDecision": "即時対応 | 計画対応 | 経過観察 | 作業不要",
   "cropGuessed": "推定または記録された作物名（不明なら空文字）",
   "observations": [{ "photoIndex": 1, "finding": "写真ごとの観察内容" }],
   "possibleCauses": [{ "name": "原因・要因名", "likelihood": "高 | 中 | 低", "reason": "根拠・説明" }],
   "recommendedActions": [{ "priority": "高 | 中 | 低", "action": "対策タイトル", "detail": "具体的な手順・注意点" }],
+  "workInstructions": [
+    {
+      "workName": "登録済み作業名マスターから選んだ作業名",
+      "title": "作業指示の具体的な見出し（例：東側畝の排水溝切り・停滞水排除）",
+      "priority": "高 | 中 | 低",
+      "urgency": "今日中 | 3日以内 | 1週間以内 | 経過観察後",
+      "suggestedDate": "YYYY-MM-DD",
+      "deadlineDate": "YYYY-MM-DD",
+      "estimatedHours": "例: 1h や 0.5h（不明なら空文字）",
+      "cropName": "対象作物名（不明なら空文字）",
+      "targetArea": "圃場内の対象箇所（例：東側畝、外周部、全体）",
+      "reason": "この作業が必要な理由・根拠（1〜2文）",
+      "steps": ["具体的な作業手順1", "具体的な作業手順2"],
+      "materials": ["必要資材・道具1"],
+      "caution": "作業時の注意点（例：農薬ラベル確認や天候条件など）"
+    }
+  ],
   "checkPoints": ["現地で確認したいポイント"],
   "followUpNote": "次回撮影・経過観察のポイント"
 }`;

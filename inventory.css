@@ -58,6 +58,18 @@ html.invm-lock body {
   }
 }
 
+.mobile-bottom-bar #btnInventory {
+  position: relative;
+}
+
+.mobile-bottom-bar #btnInventory .invm-nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  margin-left: 0;
+  pointer-events: none;
+}
+
 /* ---------- 一覧画面 ---------- */
 .invm-root {
   position: fixed;

@@ -1,0 +1,692 @@
+/* 出荷マスタ機能（shipping-master.js） */
+.shipmst-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10086;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(2px);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  color: #1e293b;
+}
+
+.shipmst-modal *,
+.shipmst-modal *::before,
+.shipmst-modal *::after {
+  box-sizing: border-box;
+}
+
+.shipmst-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1260px, 97vw);
+  height: 94vh;
+  max-height: 94vh;
+  background: #f8fafc;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.36);
+}
+
+.shipmst-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 16px;
+  background: linear-gradient(135deg, #0f766e, #0d9488);
+  color: #fff;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.shipmst-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.shipmst-title {
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.shipmst-date-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.16);
+  padding: 3px 6px;
+  border-radius: 9px;
+}
+
+.shipmst-date-bar input[type="date"] {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  background: #fff;
+}
+
+.shipmst-head-btn {
+  border: none;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.shipmst-head-btn:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+
+.shipmst-head-btn.is-warn {
+  background: #f59e0b;
+  color: #1e293b;
+}
+
+.shipmst-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shipmst-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.shipmst-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  background: #e2e8f0;
+  border-bottom: 1px solid #cbd5e1;
+  overflow-x: auto;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+}
+
+.shipmst-tab {
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: #475569;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 800;
+  border-radius: 9px 9px 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.shipmst-tab:hover {
+  background: rgba(255, 255, 255, 0.55);
+  color: #0f172a;
+}
+
+.shipmst-tab.is-active {
+  background: #f8fafc;
+  color: #0f766e;
+  border-color: #cbd5e1;
+  box-shadow: 0 -2px 0 #0f766e inset;
+}
+
+.shipmst-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.shipmst-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.shipmst-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shipmst-btn {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #1e293b;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.shipmst-btn:hover {
+  background: #f1f5f9;
+}
+
+.shipmst-btn.is-primary {
+  background: #0f766e;
+  border-color: #0f766e;
+  color: #fff;
+}
+
+.shipmst-btn.is-primary:hover {
+  background: #115e59;
+}
+
+.shipmst-btn.is-orange {
+  background: #ea580c;
+  border-color: #ea580c;
+  color: #fff;
+}
+
+.shipmst-btn.is-orange:hover {
+  background: #c2410c;
+}
+
+.shipmst-btn.is-blue {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.shipmst-btn.is-danger {
+  background: #fff;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+.shipmst-btn.is-danger:hover {
+  background: #fef2f2;
+}
+
+.shipmst-btn.is-sm {
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 6px;
+}
+
+.shipmst-btn.is-active {
+  background: #0f766e;
+  color: #fff;
+  border-color: #0f766e;
+}
+
+.shipmst-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.shipmst-card-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.shipmst-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 820px) {
+  .shipmst-grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.shipmst-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.shipmst-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.shipmst-table th,
+.shipmst-table td {
+  border: 1px solid #cbd5e1;
+  padding: 6px 7px;
+  vertical-align: middle;
+}
+
+.shipmst-table th {
+  background: #fff7ed;
+  color: #7c2d12;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.shipmst-table th.is-orange {
+  background: #ff9800;
+  color: #111;
+}
+
+.shipmst-table th.is-blue {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.shipmst-table th.is-green {
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.shipmst-table td.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.shipmst-table td.is-center {
+  text-align: center;
+}
+
+.shipmst-table tr.is-holiday-row {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.shipmst-table tr.is-inactive-row {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.shipmst-table tr.is-total-row {
+  background: #fce7f3;
+  font-weight: 800;
+}
+
+.shipmst-input,
+.shipmst-select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 12px;
+  background: #fff;
+  color: #0f172a;
+}
+
+.shipmst-input.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.shipmst-input.is-yellow {
+  background: #fef08a;
+  font-weight: 800;
+  border-color: #eab308;
+}
+
+.shipmst-input.is-override {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  font-weight: 800;
+}
+
+.shipmst-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.shipmst-badge.is-red {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.shipmst-badge.is-amber {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.shipmst-badge.is-green {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.shipmst-badge.is-blue {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.shipmst-badge.is-gray {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+/* 軽トラ積載ゲージ */
+.shipmst-load-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+.shipmst-load-bar.is-over {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.shipmst-load-progress {
+  flex: 1;
+  min-width: 180px;
+  height: 14px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.shipmst-load-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #059669);
+  transition: width 0.2s ease;
+}
+
+.shipmst-load-fill.is-warn {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.shipmst-load-fill.is-over {
+  background: linear-gradient(90deg, #ef4444, #b91c1c);
+}
+
+/* 係数表示 */
+.shipmst-coef {
+  color: #1d4ed8;
+  font-style: italic;
+  font-weight: 700;
+}
+
+/* ラベルプレビュー */
+.shipmst-label-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.shipmst-label-grid.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.shipmst-label-grid.cols-1 {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 900px) {
+  .shipmst-label-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .shipmst-label-grid,
+  .shipmst-label-grid.cols-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.shipmst-label-card {
+  border: 2px solid #111;
+  background: #fff;
+  color: #000;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 210px;
+  overflow: hidden;
+}
+
+.shipmst-label-top {
+  padding: 6px 8px 4px;
+  text-align: center;
+}
+
+.shipmst-label-chain {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.shipmst-label-code {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.15;
+}
+
+.shipmst-label-store {
+  font-size: 32px;
+  font-weight: 900;
+  line-height: 1.15;
+  margin: 4px 0;
+  word-break: break-all;
+}
+
+.shipmst-label-market {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.shipmst-label-bottom {
+  border-top: 1px solid #111;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.shipmst-label-bottom td,
+.shipmst-label-bottom th {
+  border: 1px dotted #444;
+  text-align: center;
+  padding: 2px 1px;
+}
+
+.shipmst-label-wday {
+  width: 24px;
+  font-size: 16px;
+  font-weight: 900;
+  border-right: 1px solid #111 !important;
+}
+
+.shipmst-label-rank-hd {
+  background: #fde8d8;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shipmst-label-crop-hd {
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shipmst-label-qty-val {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+/* 値段記録表カラー */
+.shipmst-pr-banner {
+  background: #fef08a;
+  border: 2px solid #111;
+  padding: 6px 10px;
+  font-weight: 800;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shipmst-pr-date {
+  background: #facc15;
+  color: #dc2626;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 900;
+}
+
+.shipmst-pr-proc {
+  background: #dbeafe !important;
+  font-weight: 700;
+  text-align: center;
+}
+
+.shipmst-pr-plus {
+  background: #dcfce7 !important;
+  font-weight: 800;
+  text-align: center;
+}
+
+.shipmst-pr-exp {
+  background: #ffedd5 !important;
+  font-weight: 700;
+  text-align: center;
+}
+
+.shipmst-pr-waste {
+  background: #fef3c7 !important;
+}
+
+/* サブモーダル（一括取込など） */
+.shipmst-submodal {
+  position: fixed;
+  inset: 0;
+  z-index: 10095;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 14px;
+}
+
+.shipmst-submodal.is-open {
+  display: flex;
+}
+
+.shipmst-subcard {
+  width: min(760px, 96vw);
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.35);
+}
+
+.shipmst-subhead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  background: #0f766e;
+  color: #fff;
+  font-weight: 800;
+}
+
+.shipmst-subbody {
+  padding: 14px;
+  overflow-y: auto;
+}
+
+.shipmst-textarea {
+  width: 100%;
+  min-height: 180px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.shipmst-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10100;
+  background: #0f172a;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.shipmst-toast.is-err {
+  background: #dc2626;
+}
+
+.shipmst-note {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.shipmst-note.is-red {
+  color: #dc2626;
+  font-weight: 800;
+}

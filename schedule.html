@@ -15,11 +15,15 @@
   <script src="exit-guard.js?v=1786240000001"></script>
   <script src="terms.js?v=1786456000000"></script>
   <script src="map-loading.js?v=1788600000403"></script>
-  <link rel="stylesheet" href="schedule.css?v=1788600000426">
+  <link rel="stylesheet" href="schedule.css?v=1788600000528">
   <link rel="stylesheet" href="cad.css?v=1788600000507">
   <link rel="stylesheet" href="location-pin.css?v=1788600000503">
   <link rel="stylesheet" href="map-filter.css?v=1788600000415">
-  <link rel="stylesheet" href="cultivation-history.css?v=1788600000517">
+  <link rel="stylesheet" href="cultivation-history.css?v=1788600000528">
+  <link rel="stylesheet" href="shipping-accounting.css?v=1788600000528">
+  <link rel="stylesheet" href="shipping-master.css?v=1788600000528">
+  <link rel="stylesheet" href="inventory.css?v=1788600000528">
+  <link rel="stylesheet" href="photo-manual.css?v=1788600000528">
   <script type="importmap">
     {
       "imports": {
@@ -164,6 +168,7 @@
           TAG進捗</button>
       </div>
       <div class="modal-body">
+        <div id="scheduleVehicleReserveBanner" class="sched-veh-banner" style="display:none;"></div>
         <div id="scheduleViewTasks">
           <div id="scheduleBulkBar" class="schedule-bulk-bar">
             <label class="sched-check-label">
@@ -420,7 +425,7 @@
   <div id="addWorkModal"
     style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10030; align-items:center; justify-content:center;">
     <div
-      style="background:#fff; width:min(420px,94vw); border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25);">
+      style="background:#fff; width:min(420px,94vw); max-height:92vh; overflow:auto; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,.25);">
       <div
         style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#2e7d32; color:#fff;">
         <span id="addWorkModalTitle" style="font-weight:bold;">＋ 作業を追加</span>
@@ -461,6 +466,7 @@
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">📅 予定日</label>
             <input type="date" id="addWorkSchedDate"
+              onchange="if(typeof refreshAddWorkVehiclePicker_==='function') refreshAddWorkVehiclePicker_()"
               style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
           <div style="flex:1;">
@@ -474,6 +480,8 @@
           <input type="text" id="addWorkHours" placeholder="例: 2h, 10枚"
             style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
         </div>
+        <div id="addWorkVehicleReserveNotice" class="sched-veh-notice" style="display:none;"></div>
+        <div id="addWorkVehiclePicker" class="sched-veh-picker"></div>
         <button type="button" id="addWorkSubmitBtn" onclick="submitAddWorkFromModal()"
           style="width:100%;background:#2e7d32;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
         <div id="addWorkResult" style="margin-top:8px;font-size:12px;font-weight:bold;"></div>
@@ -535,6 +543,7 @@
           <div style="flex:1;">
             <label style="font-size:11px;color:#555;">予定日</label>
             <input type="date" id="ganttAddStart"
+              onchange="if(typeof refreshGanttAddVehiclePicker_==='function') refreshGanttAddVehiclePicker_()"
               style="width:100%;padding:7px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;">
           </div>
           <div style="flex:1;">
@@ -548,9 +557,35 @@
           <select id="ganttAddField"
             style="width:100%;padding:8px;border:1px solid #ccc;border-radius:6px;box-sizing:border-box;"></select>
         </div>
+        <div id="ganttAddVehicleReserveNotice" class="sched-veh-notice" style="display:none;"></div>
+        <div id="ganttAddVehiclePicker" class="sched-veh-picker"></div>
         <button type="button" id="ganttAddSubmitBtn" onclick="submitGanttAddWork_()"
           style="width:100%;margin-top:14px;background:#1565c0;color:#fff;border:none;padding:12px;border-radius:6px;font-weight:bold;font-size:14px;cursor:pointer;">登録する</button>
         <div id="ganttAddResult" style="margin-top:8px;font-size:12px;font-weight:bold;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="scheduleVehicleDispatchModal"
+    style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:10040; align-items:center; justify-content:center;"
+    onclick="if(event.target===this && typeof closeScheduleVehicleDispatchModal_==='function') closeScheduleVehicleDispatchModal_()">
+    <div
+      style="background:#fff; width:min(440px,94vw); max-height:90vh; border-radius:10px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.25); display:flex; flex-direction:column;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#00695C; color:#fff;">
+        <span id="schedVehDispatchTitle" style="font-weight:bold;">🛻 配車設定</span>
+        <span style="cursor:pointer; font-size:22px; line-height:1;" onclick="closeScheduleVehicleDispatchModal_()">×</span>
+      </div>
+      <div style="padding:14px 16px; overflow:auto; flex:1;">
+        <div id="schedVehDispatchMeta" style="font-size:12px; color:#555; margin-bottom:10px; line-height:1.45;"></div>
+        <div id="schedVehDispatchNotice" class="sched-veh-notice" style="display:none;"></div>
+        <div id="schedVehDispatchPicker" class="sched-veh-picker"></div>
+        <div style="display:flex; gap:8px; margin-top:14px;">
+          <button type="button" onclick="closeScheduleVehicleDispatchModal_()"
+            style="flex:1; background:#eee; color:#333; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">キャンセル</button>
+          <button type="button" id="schedVehDispatchSaveBtn" onclick="saveScheduleVehicleDispatch_()"
+            style="flex:1; background:#00695C; color:#fff; border:none; padding:11px; border-radius:6px; font-weight:bold; cursor:pointer;">保存する</button>
+        </div>
       </div>
     </div>
   </div>
@@ -822,6 +857,26 @@
     <button type="button" onclick="document.getElementById('mobileWorkListMenu').style.display='flex'">
       <div style="font-size:20px;">📋</div>
       <div style="font-weight:bold;">作業一覧</div>
+    </button>
+    <button type="button" onclick="window.openShippingAccountingModal && openShippingAccountingModal()" title="出荷会計記録">
+      <div style="font-size:20px;">🧾</div>
+      <div style="font-weight:bold;">出荷会計</div>
+    </button>
+    <button type="button" onclick="window.openShippingMasterModal && openShippingMasterModal()" title="出荷マスタ（配分・ラベル・値段記録表）">
+      <div style="font-size:20px;">🚚</div>
+      <div style="font-weight:bold;">出荷マスタ</div>
+    </button>
+    <button type="button" id="btnInventory" onclick="window.openInventoryManager && openInventoryManager()"
+      title="在庫管理（農薬・肥料・資材）">
+      <div style="font-size:20px;">📦</div>
+      <div style="font-weight:bold;">在庫管理</div>
+      <span class="invm-chip-badge invm-nav-badge" data-inventory-badge style="display:none;">0</span>
+    </button>
+    <button type="button" id="btnPhotoManual" onclick="window.openPhotoManualHub && openPhotoManualHub('inbox')"
+      title="写真仕分け・マニュアル作成・印刷">
+      <div style="font-size:20px;">📸</div>
+      <div style="font-weight:bold;">写真・マニュアル</div>
+      <span class="pm-nav-badge" data-photo-inbox-badge style="display:none;">0</span>
     </button>
     <button type="button" onclick="openSowingProgressModal()">
       <div style="font-size:20px;">🌱</div>
@@ -1307,7 +1362,7 @@
   <script>
     // 栽培計画モーダルと依存スクリプトを実際のファイル完了数で表示する
     // ※データ取得(GAS)は別途。画面を開けるようにスクリプト完了でオーバーレイを閉じる
-    const cacheBust = '1788600000521';
+    const cacheBust = '1788600000528';
     // 豚糞共有：台数＋短いGoogleマップURL＋座標（v1.49）
     // ※ https://maps.google.com/?q=緯度,経度
     // アカウントメニューはスマホ上部バーからはみ出して fixed 表示（v1.46）
@@ -1416,6 +1471,7 @@
     appendScript('api-client.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('api-client.js'))
       .then(() => appendScript('supabase-config.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('supabase-bridge.js?v=' + cacheBust).catch(function () { }))
+      .then(() => appendScript('vehicle-dispatch.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('fertilizer-lookup.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('pesticide-lookup.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('maint-history.js?v=' + cacheBust).catch(function () { }))
@@ -1446,6 +1502,33 @@
       .then(() => appendScript('crop_work.js?v=' + cacheBust).then(() => markBootstrapFileLoaded('crop_work.js')))
       .then(() => appendScript('cultivation-setting.js?v=' + cacheBust).catch(function () { }))
       .then(() => appendScript('cultivation-history.js?v=' + cacheBust).catch(function () { }))
+      .then(() => appendScript('shipping-accounting.js?v=' + cacheBust).catch(function () { }))
+      .then(() => appendScript('shipping-master.js?v=' + cacheBust).catch(function () { }))
+      .then(() => appendScript('inventory.js?v=' + cacheBust).then(() => {
+        try {
+          if (window.InventoryUI) {
+            const raw = localStorage.getItem('passionMapInitData');
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed && parsed.pdl && Array.isArray(parsed.pdl.materials)) {
+                window.InventoryUI.onInitData(parsed.pdl.materials);
+              }
+            }
+            if (typeof hasValidSpreadsheetId_ === 'function' && hasValidSpreadsheetId_()) {
+              setTimeout(() => {
+                if (window.InventoryUI && typeof window.InventoryUI.reload === 'function') {
+                  window.InventoryUI.reload().catch(() => { });
+                }
+              }, 1200);
+            }
+          }
+        } catch (e) { }
+      }).catch(function () { }))
+      .then(() => appendScript('photo-manual.js?v=' + cacheBust).then(() => {
+        if (window.PhotoManualUI && typeof window.PhotoManualUI.init === 'function') {
+          window.PhotoManualUI.init({ mode: 'schedule' });
+        }
+      }).catch(function () { }))
       .then(() => finishScheduleBootstrapIfReady())
       .catch(err => {
         console.error('予定確認アプリの読み込み失敗', err);

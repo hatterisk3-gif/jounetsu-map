@@ -2788,11 +2788,32 @@
       lat: lat,
       lng: lng
     }));
+    const nextDayTruckSnap = pending.nextDayTruck || null;
 
     getPositionRobust()
       .then((p) => sendClockOut_(p.coords.latitude, p.coords.longitude))
       .catch(() => sendClockOut_(0, 0))
       .then(() => {
+        if (window.VehicleDispatch && nextDayTruckSnap) {
+          if (nextDayTruckSnap.enabled && nextDayTruckSnap.vehicleId && nextDayTruckSnap.dateYmd) {
+            window.VehicleDispatch.saveReservation({
+              id: nextDayTruckSnap.existingReservationId || '',
+              dateYmd: nextDayTruckSnap.dateYmd,
+              vehicleId: nextDayTruckSnap.vehicleId,
+              vehicleName: nextDayTruckSnap.vehicleName || '',
+              vehicleType: nextDayTruckSnap.vehicleType || '軽トラ',
+              plateNumber: nextDayTruckSnap.plateNumber || '',
+              userName: user,
+              note: nextDayTruckSnap.note || '',
+              source: 'clock_out'
+            }).catch((e) => console.warn('翌日の軽トラ予約保存エラー', e));
+          } else if (!nextDayTruckSnap.enabled && nextDayTruckSnap.wasReserved && nextDayTruckSnap.existingReservationId) {
+            window.VehicleDispatch.deleteReservation({
+              id: nextDayTruckSnap.existingReservationId,
+              userName: user
+            }).catch((e) => console.warn('翌日の軽トラ予約削除エラー', e));
+          }
+        }
         applyLocalClockOutDone_();
         alertMsg('退勤を記録しました。\n※同じ日のうちなら、もう一度ボタンを押して退勤を取り消せます。');
         afterClockOutSaved();
@@ -2871,6 +2892,12 @@
       midBreakMins: midBreakMins
     });
 
+    const nextDayTruck = readClockOutNextDayTruckFromDom_();
+    if (nextDayTruck && nextDayTruck.enabled && !nextDayTruck.vehicleId) {
+      alertMsg('翌日使用する軽トラを選んでください');
+      return;
+    }
+
     const pending = {
       user: user,
       clockInTime: getClockInTimeStr(),
@@ -2881,7 +2908,8 @@
       lunchEnabled: lunchEnabled,
       lunchStart: lunchStart || '12:00',
       lunchEnd: lunchEnd || '13:00',
-      midBreakMins: midBreakMins
+      midBreakMins: midBreakMins,
+      nextDayTruck: nextDayTruck
     };
 
     const inM = timeToMins(pending.clockInTime);
@@ -3299,6 +3327,190 @@
     alertMsg('昼休憩なしで登録しました。退勤処理へ進めます。');
   };
 
+  function getClockOutTruckOptions_(vd) {
+    if (!vd) return [];
+    const trucks = vd.listVehicles({ keiTruckOnly: true });
+    return trucks.length ? trucks : vd.listVehicles({ sortKeiTruckFirst: true });
+  }
+
+  function renderClockOutTruckOptionsHtml_(vd, selectedId) {
+    const list = getClockOutTruckOptions_(vd);
+    const normSel = vd.normalizeVehicleId(selectedId);
+    const esc = vd.escHtml;
+    let html = '<option value="">軽トラを選択...</option>';
+    list.forEach((v) => {
+      const vid = vd.normalizeVehicleId(v.id);
+      const label = vd.formatVehicleLabel(v);
+      const vType = String(v.vehicleType || v.type || '軽トラ').trim();
+      const plate = String(v.plateNumber || v.vehicleNumber || '').trim();
+      html += `<option value="${esc(vid)}" data-name="${esc(label)}" data-vehicle-type="${esc(vType)}" data-plate="${esc(plate)}" ${vid === normSel ? 'selected' : ''}>${esc(label)}</option>`;
+    });
+    return html;
+  }
+
+  function refreshClockOutNextDayTruckConflict_() {
+    const box = document.getElementById('clockOutNextDayTruckConflict');
+    const vd = window.VehicleDispatch;
+    if (!box || !vd) return;
+    const cb = document.getElementById('clockOutNextDayTruckEnabled');
+    const sel = document.getElementById('clockOutNextDayTruckVehicle');
+    const dateEl = document.getElementById('clockOutNextDayTruckDate');
+    if (!cb || !cb.checked || !sel || !sel.value || !dateEl || !dateEl.value) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+    const vid = vd.normalizeVehicleId(sel.value);
+    const dateYmd = vd.normYmd(dateEl.value);
+    const me = vd.normUserKey(getCurrentUserName());
+    const others = vd.getReservationsForDate(dateYmd).filter((r) => {
+      return vd.normalizeVehicleId(r.vehicleId) === vid && vd.normUserKey(r.userName) !== me;
+    });
+    if (!others.length) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+    const esc = vd.escHtml;
+    box.innerHTML = `⚠️ ${esc(vd.formatMdJa(dateYmd))} に他の人の利用希望があります: ` +
+      others.map((r) => `${esc(r.userName || '他スタッフ')}${r.note ? '（' + esc(r.note) + '）' : ''}`).join('、');
+    box.style.display = 'block';
+  }
+
+  window.toggleClockOutNextDayTruckFields_ = function () {
+    const cb = document.getElementById('clockOutNextDayTruckEnabled');
+    const fields = document.getElementById('clockOutNextDayTruckFields');
+    window._clockOutNextDayTruckTouched = true;
+    if (cb && fields) {
+      fields.style.display = cb.checked ? 'block' : 'none';
+    }
+    refreshClockOutNextDayTruckConflict_();
+  };
+
+  window.onClockOutNextDayTruckInputChange_ = function () {
+    window._clockOutNextDayTruckTouched = true;
+    refreshClockOutNextDayTruckConflict_();
+  };
+
+  function readClockOutNextDayTruckFromDom_() {
+    const vd = window.VehicleDispatch;
+    const cb = document.getElementById('clockOutNextDayTruckEnabled');
+    if (!vd || !cb) return null;
+    const sel = document.getElementById('clockOutNextDayTruckVehicle');
+    const dateEl = document.getElementById('clockOutNextDayTruckDate');
+    const noteEl = document.getElementById('clockOutNextDayTruckNote');
+    const opt = sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+    const vehicleId = vd.normalizeVehicleId(sel ? sel.value : '');
+    return {
+      enabled: !!cb.checked,
+      vehicleId: vehicleId,
+      vehicleName: opt ? String(opt.getAttribute('data-name') || opt.textContent || vehicleId).trim() : vehicleId,
+      vehicleType: opt ? String(opt.getAttribute('data-vehicle-type') || '軽トラ').trim() : '軽トラ',
+      plateNumber: opt ? String(opt.getAttribute('data-plate') || '').trim() : '',
+      dateYmd: vd.normYmd(dateEl ? dateEl.value : '') || vd.tomorrowYmd(),
+      note: String(noteEl ? noteEl.value : '').trim(),
+      existingReservationId: String(cb.getAttribute('data-existing-id') || '').trim(),
+      wasReserved: cb.getAttribute('data-was-reserved') === '1'
+    };
+  }
+
+  function buildClockOutNextDayTruckHtml_(user, workDateYmd, pending) {
+    const vd = window.VehicleDispatch;
+    if (!vd) return '';
+    const esc = vd.escHtml;
+    const baseYmd = vd.normYmd(workDateYmd) || vd.todayYmd();
+    const defaultNextYmd = vd.addDaysYmd(baseYmd, 1);
+    const pTruck = (pending && pending.nextDayTruck) || null;
+    const myRes = vd.findMyReservationForDate(user, (pTruck && pTruck.dateYmd) || defaultNextYmd);
+    const todayUsed = vd.collectTodayUsedVehiclesForUser(user, baseYmd);
+    const todayTruck = todayUsed.find((v) => vd.isKeiTruck(v)) || todayUsed[0] || null;
+    const allOpts = getClockOutTruckOptions_(vd);
+
+    const enabled = pTruck ? !!pTruck.enabled : !!myRes;
+    const targetDate = (pTruck && pTruck.dateYmd) || (myRes && myRes.dateYmd) || defaultNextYmd;
+    const targetVehId = (pTruck && pTruck.vehicleId) ||
+      (myRes && myRes.vehicleId) ||
+      (todayTruck && todayTruck.id) ||
+      (allOpts[0] && allOpts[0].id) ||
+      '';
+    const targetNote = (pTruck && pTruck.note != null) ? pTruck.note : ((myRes && myRes.note) || '');
+    const existingId = (pTruck && pTruck.existingReservationId) || (myRes && myRes.id) || '';
+    const wasReserved = pTruck ? !!pTruck.wasReserved : !!myRes;
+    const todayHint = todayTruck
+      ? `<div style="font-size:11px; color:#00695C; margin-bottom:6px;">💡 本日の作業記録で使用した車両: <b>${esc(vd.formatVehicleLabel(todayTruck))}</b></div>`
+      : '';
+
+    return `
+      <div id="clockOutNextDayTruckBox" style="background:#FFF8E1; border:1px solid #FFCC80; border-radius:8px; padding:12px; margin-bottom:12px;">
+        <label style="display:flex; align-items:center; gap:8px; font-weight:bold; color:#E65100; cursor:pointer; font-size:14px;">
+          <input type="checkbox" id="clockOutNextDayTruckEnabled" data-existing-id="${esc(existingId)}" data-was-reserved="${wasReserved ? '1' : '0'}" ${enabled ? 'checked' : ''} onchange="toggleClockOutNextDayTruckFields_()" style="width:18px; height:18px; flex-shrink:0;">
+          <span>🛻 次の日も軽トラを使う（任意）</span>
+        </label>
+        <div style="font-size:11px; color:#6D4C41; margin:4px 0 0 26px; line-height:1.4;">チェックすると、翌日の予定を立てる画面に利用希望が表示されます。</div>
+        <div id="clockOutNextDayTruckFields" style="display:${enabled ? 'block' : 'none'}; margin-top:10px; padding-top:8px; border-top:1px dashed #FFB74D;">
+          ${todayHint}
+          <label style="display:block; font-size:11px; color:#5D4037; font-weight:bold; margin-bottom:4px;">使用する軽トラ</label>
+          <select id="clockOutNextDayTruckVehicle" class="form-input" onchange="onClockOutNextDayTruckInputChange_()" style="width:100%; box-sizing:border-box; padding:9px 10px; margin:0 0 8px; font-size:14px; border:1px solid #FFB74D; border-radius:6px; background:#fff;">
+            ${renderClockOutTruckOptionsHtml_(vd, targetVehId)}
+          </select>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <div style="flex:0 0 150px;">
+              <label style="display:block; font-size:11px; color:#5D4037; font-weight:bold; margin-bottom:3px;">使用予定日</label>
+              <input type="date" id="clockOutNextDayTruckDate" class="form-input" value="${esc(targetDate)}" onchange="onClockOutNextDayTruckInputChange_()" style="width:100%; box-sizing:border-box; padding:8px; margin:0; font-size:14px; font-weight:bold; border:1px solid #FFB74D; border-radius:6px; background:#fff;">
+            </div>
+            <div style="flex:1; min-width:150px;">
+              <label style="display:block; font-size:11px; color:#5D4037; font-weight:bold; margin-bottom:3px;">用途メモ（任意）</label>
+              <input type="text" id="clockOutNextDayTruckNote" class="form-input" value="${esc(targetNote)}" placeholder="例: 朝イチ収穫・資材運搬" oninput="onClockOutNextDayTruckInputChange_()" style="width:100%; box-sizing:border-box; padding:8px; margin:0; font-size:14px; border:1px solid #FFB74D; border-radius:6px; background:#fff;">
+            </div>
+          </div>
+          <div id="clockOutNextDayTruckConflict" style="display:none; margin-top:8px; font-size:11px; color:#C62828; background:#FFEBEE; border:1px solid #EF9A9A; border-radius:6px; padding:6px 8px; line-height:1.4;"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function hydrateClockOutNextDayTruck_(user, workDateYmd, pending) {
+    const vd = window.VehicleDispatch;
+    if (!vd) return;
+    window._clockOutNextDayTruckTouched = false;
+    refreshClockOutNextDayTruckConflict_();
+    const pTruck = (pending && pending.nextDayTruck) || null;
+    const baseYmd = vd.normYmd(workDateYmd) || vd.todayYmd();
+    const defaultNextYmd = vd.addDaysYmd(baseYmd, 1);
+
+    Promise.all([
+      vd.ensureVehiclesLoaded().catch(() => []),
+      vd.loadReservations().catch(() => [])
+    ]).then(() => {
+      const sel = document.getElementById('clockOutNextDayTruckVehicle');
+      const cb = document.getElementById('clockOutNextDayTruckEnabled');
+      const dateEl = document.getElementById('clockOutNextDayTruckDate');
+      const noteEl = document.getElementById('clockOutNextDayTruckNote');
+      const fields = document.getElementById('clockOutNextDayTruckFields');
+      if (!sel || !cb) return;
+      const myRes = vd.findMyReservationForDate(user, (dateEl && dateEl.value) || defaultNextYmd);
+      const todayUsed = vd.collectTodayUsedVehiclesForUser(user, baseYmd);
+      const todayTruck = todayUsed.find((v) => vd.isKeiTruck(v)) || todayUsed[0] || null;
+      const allOpts = getClockOutTruckOptions_(vd);
+
+      let chosenId = sel.value;
+      if (!window._clockOutNextDayTruckTouched && !pTruck) {
+        if (myRes) {
+          cb.checked = true;
+          cb.setAttribute('data-existing-id', String(myRes.id || ''));
+          cb.setAttribute('data-was-reserved', '1');
+          if (fields) fields.style.display = 'block';
+          if (noteEl && !noteEl.value && myRes.note) noteEl.value = myRes.note;
+          chosenId = myRes.vehicleId || chosenId;
+        } else if (!chosenId) {
+          chosenId = (todayTruck && todayTruck.id) || (allOpts[0] && allOpts[0].id) || '';
+        }
+      }
+      sel.innerHTML = renderClockOutTruckOptionsHtml_(vd, chosenId);
+      refreshClockOutNextDayTruckConflict_();
+    });
+  }
+
   /** 退勤モーダルを開く（通常／退勤忘れ共通） */
   function openClockOutModal(options) {
     options = options || {};
@@ -3428,6 +3640,7 @@
       html += `<div style="margin-top:10px; font-size:11px; color:#888;">作業中の休憩は退勤ではなく「☕ 休憩登録」から何度でも登録してください</div>`;
     }
     html += `</div>`;
+    html += buildClockOutNextDayTruckHtml_(user, workDateForLunch || outDate, pending);
 
     html += `<div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">`;
     html += `  <div style="display:flex; gap:8px;">`;
@@ -3449,6 +3662,7 @@
     clockEls.modalBody.style.height = '100%';
     clockEls.modalBody.style.maxHeight = '100vh';
     clockEls.modalBody.style.borderRadius = '0';
+    hydrateClockOutNextDayTruck_(user, workDateForLunch || outDate, pending);
     // 作業中休憩の入力UIは撤去済み（作業記録の合計のみ参照）
 
     // 退勤忘れ時: 地図データ未読込だと最終終了時間が取れないため、シート／読み込み後に再セット

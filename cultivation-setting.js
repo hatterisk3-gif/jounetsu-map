@@ -25,6 +25,10 @@
     { key: 'rain', label: '積算降水量', unit: 'mm' }
   ];
   var MAX_SCAN_DAYS = 400;
+  var FERT_UNITS = ['kg/10a', '袋/10a', 't/10a', 'g/10a', 'L/10a', 'mL/10a', 'g/株', '倍'];
+  var FERT_METHODS = ['元肥・全面混和', '全面散布', '条施', '株元追肥', '灌水施肥', '葉面散布'];
+  var PEST_UNITS = ['L/10a', 'mL/10a', 'g/10a', 'kg/10a', '本/10a', '袋/10a'];
+  var PEST_METHODS = ['散布', '株元灌注', '土壌混和', '定植時株元散布', '無人航空機散布'];
   var ENV_DEFAULT = {
     version: 1,
     lookaheadDays: 14,
@@ -252,6 +256,105 @@
     });
   }
 
+  /** 圃場の面積（a）を返す。未設定時はポリゴン座標から算出（取得不能時は0） */
+  function fieldAreaA(fieldId) {
+    var p = fieldId ? polygonsMap()[fieldId] : null;
+    if (!p) return 0;
+    var a = parseFloat(p.area);
+    if (isFinite(a) && a > 0) return a;
+    try {
+      if (Array.isArray(p.coords) && p.coords.length >= 3 &&
+        global.google && global.google.maps && global.google.maps.geometry && global.google.maps.geometry.spherical) {
+        var latLngs = p.coords.map(function (c) { return new global.google.maps.LatLng(Number(c.lat), Number(c.lng)); });
+        var computed = global.google.maps.geometry.spherical.computeArea(latLngs) / 100;
+        if (isFinite(computed) && computed > 0) return Math.round(computed * 10) / 10;
+      }
+    } catch (e) { }
+    return 0;
+  }
+
+  function calcScaledAmount(amount, unit, areaA) {
+    var amt = optNum(amount);
+    var a = Number(areaA);
+    var u = String(unit || '');
+    if (!(amt > 0) || !(a > 0) || !/\/10a$/.test(u)) return null;
+    return {
+      value: Math.round((amt * a / 10) * 100) / 100,
+      unit: u.replace(/\/10a$/, '')
+    };
+  }
+
+  function fmtAmountNum(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return '';
+    return Math.abs(n) >= 100 ? String(Math.round(n)) : String(Math.round(n * 10) / 10);
+  }
+
+  function formatFertilizerLine(f, areaA) {
+    if (!f || !f.name) return '';
+    var s = String(f.name);
+    if (f.amount != null && isFinite(Number(f.amount))) {
+      var u = f.unit || 'kg/10a';
+      s += ' ' + fmtAmountNum(f.amount) + u;
+      var scaled = calcScaledAmount(f.amount, u, areaA);
+      if (scaled) s += '（約' + fmtAmountNum(scaled.value) + scaled.unit + '）';
+    }
+    if (f.method) s += '［' + f.method + '］';
+    return s;
+  }
+
+  function formatPesticideLine(p, areaA) {
+    if (!p || !p.name) return '';
+    var s = String(p.name);
+    if (p.dilution) s += ' ' + p.dilution;
+    if (p.amount != null && isFinite(Number(p.amount))) {
+      var u = p.unit || 'L/10a';
+      s += ' ' + fmtAmountNum(p.amount) + u;
+      var scaled = calcScaledAmount(p.amount, u, areaA);
+      if (scaled) s += '（約' + fmtAmountNum(scaled.value) + scaled.unit + '）';
+    }
+    if (p.target) s += '［' + p.target + '］';
+    return s;
+  }
+
+  function calcNpkPer10a(fertilizers) {
+    var n = 0;
+    var p = 0;
+    var k = 0;
+    var hasAny = false;
+    (Array.isArray(fertilizers) ? fertilizers : []).forEach(function (f) {
+      if (!f || !f.name || !(f.amount > 0)) return;
+      var mult = 0;
+      if (!f.unit || f.unit === 'kg/10a') mult = 1;
+      else if (f.unit === 't/10a') mult = 1000;
+      else if (f.unit === 'g/10a') mult = 0.001;
+      if (!mult) return;
+      var kgPer10a = Number(f.amount) * mult;
+      if (f.n != null && isFinite(Number(f.n))) { n += kgPer10a * (Number(f.n) / 100); hasAny = true; }
+      if (f.p != null && isFinite(Number(f.p))) { p += kgPer10a * (Number(f.p) / 100); hasAny = true; }
+      if (f.k != null && isFinite(Number(f.k))) { k += kgPer10a * (Number(f.k) / 100); hasAny = true; }
+    });
+    return {
+      n: Math.round(n * 10) / 10,
+      p: Math.round(p * 10) / 10,
+      k: Math.round(k * 10) / 10,
+      hasAny: hasAny
+    };
+  }
+
+  function buildMaterialsText(fertilizers, pesticides, areaA) {
+    var parts = [];
+    (Array.isArray(fertilizers) ? fertilizers : []).forEach(function (f) {
+      var line = formatFertilizerLine(f, areaA);
+      if (line) parts.push('🧪 ' + line);
+    });
+    (Array.isArray(pesticides) ? pesticides : []).forEach(function (p) {
+      var line = formatPesticideLine(p, areaA);
+      if (line) parts.push('🧴 ' + line);
+    });
+    return parts.join(' ／ ');
+  }
+
   // ---------------------------------------------------------------------
   // 設定データの正規化・標準テンプレート
   // ---------------------------------------------------------------------
@@ -309,17 +412,76 @@
     };
   }
 
+  function clampMaterialLink(item, validWorkIds, workMap) {
+    var workId = String((item && item.workId) || '').trim();
+    var round = Math.max(0, Math.round(num(item && item.round, 0)));
+    if (!workId || !validWorkIds[workId]) {
+      workId = '';
+      round = 0;
+    } else {
+      var rep = (workMap[workId] && workMap[workId].repeat) || 1;
+      if (rep <= 1) round = 0;
+      else if (round > rep) round = rep;
+    }
+    return { workId: workId, round: round };
+  }
+
+  function normalizeFertilizer(f, validWorkIds, workMap) {
+    f = f || {};
+    var link = clampMaterialLink(f, validWorkIds || {}, workMap || {});
+    return {
+      id: String(f.id || uid('cf')),
+      workId: link.workId,
+      round: link.round,
+      name: String(f.name || '').trim(),
+      amount: optNum(f.amount),
+      unit: String(f.unit || 'kg/10a').trim() || 'kg/10a',
+      method: String(f.method || '').trim(),
+      n: optNum(f.n),
+      p: optNum(f.p),
+      k: optNum(f.k),
+      note: String(f.note || '').trim()
+    };
+  }
+
+  function normalizePesticide(p, validWorkIds, workMap) {
+    p = p || {};
+    var link = clampMaterialLink(p, validWorkIds || {}, workMap || {});
+    return {
+      id: String(p.id || uid('cp')),
+      workId: link.workId,
+      round: link.round,
+      name: String(p.name || '').trim(),
+      dilution: String(p.dilution || '').trim(),
+      amount: optNum(p.amount),
+      unit: String(p.unit || 'L/10a').trim() || 'L/10a',
+      target: String(p.target || '').trim(),
+      method: String(p.method || '').trim(),
+      phiDays: optNum(p.phiDays),
+      activeIngredient: String(p.activeIngredient || '').trim(),
+      note: String(p.note || '').trim()
+    };
+  }
+
   function normalizeSetting(raw, cropName) {
     raw = raw || {};
     var works = (Array.isArray(raw.works) ? raw.works : []).map(normalizeWork).filter(function (w) { return w.name; });
     var ids = {};
+    var workMap = {};
     works.forEach(function (w) {
       if (ids[w.id]) w.id = uid('w');
       ids[w.id] = true;
+      workMap[w.id] = w;
     });
     works.forEach(function (w) {
       if (w.anchor !== 'planting' && (!ids[w.anchor] || w.anchor === w.id)) w.anchor = 'planting';
     });
+    var fertilizers = (Array.isArray(raw.fertilizers) ? raw.fertilizers : []).map(function (f) {
+      return normalizeFertilizer(f, ids, workMap);
+    }).filter(function (f) { return f.name; });
+    var pesticides = (Array.isArray(raw.pesticides) ? raw.pesticides : []).map(function (p) {
+      return normalizePesticide(p, ids, workMap);
+    }).filter(function (p) { return p.name; });
     return {
       cropName: String(cropName || raw.cropName || '').trim(),
       baseTemp: num(raw.baseTemp, 10),
@@ -327,6 +489,8 @@
       anchorLabel: raw.anchorLabel === 'sowing' ? 'sowing' : 'planting',
       dept: String(raw.dept || ''),
       works: works,
+      fertilizers: fertilizers,
+      pesticides: pesticides,
       isDefault: !!raw.isDefault,
       source: String(raw.source || ''),
       updatedAt: String(raw.updatedAt || ''),
@@ -1039,6 +1203,19 @@
       if (e && e > harvestEnd) harvestEnd = e;
     });
 
+    function matchMaterialsForInstance(inst) {
+      if (inst.isManual) return { fertilizers: [], pesticides: [] };
+      var roundNo = inst.rep + 1;
+      var matchFn = function (item) {
+        return item && item.workId === inst.workId && (!item.round || item.round === roundNo);
+      };
+      return {
+        fertilizers: (setting.fertilizers || []).filter(matchFn).map(clone),
+        pesticides: (setting.pesticides || []).filter(matchFn).map(clone)
+      };
+    }
+
+    var areaA = fieldAreaA(record.fieldId);
     var list = instances.map(function (inst) {
       var d = dates[inst.key] || {};
       var st = statusMap[inst.key];
@@ -1053,6 +1230,7 @@
         status = 'na';
         note = '収穫終了後のため省略';
       }
+      var mats = matchMaterialsForInstance(inst);
       return {
         key: inst.key,
         workId: inst.workId,
@@ -1062,6 +1240,9 @@
         category: inst.category,
         isManual: inst.isManual,
         match: inst.match,
+        fertilizers: mats.fertilizers,
+        pesticides: mats.pesticides,
+        materialsText: buildMaterialsText(mats.fertilizers, mats.pesticides, areaA),
         start: d.start || '',
         end: d.end || d.start || '',
         predStart: d.predStart || d.start || '',
@@ -1230,7 +1411,8 @@
     openWork: '',
     envDraft: null,
     sim: { plantDate: todayYmd(), condition: 'open', fieldId: '' },
-    simResult: null
+    simResult: null,
+    picker: null
   };
 
   function el(id) { return document.getElementById(id); }
@@ -1253,18 +1435,38 @@
       '  </div>' +
       '  <div class="cult-body" id="cultSettingBody"></div>' +
       '</div>' +
-      '<datalist id="cultWorkNameList"></datalist>';
+      '<div id="cultCatalogPicker" class="cult-picker-backdrop" style="display:none;"></div>' +
+      '<datalist id="cultWorkNameList"></datalist>' +
+      '<datalist id="cultFertNameList"></datalist>' +
+      '<datalist id="cultFertMethodList"></datalist>' +
+      '<datalist id="cultPestNameList"></datalist>' +
+      '<datalist id="cultPestMethodList"></datalist>';
     document.body.appendChild(wrap);
     wrap.addEventListener('click', onClick);
     wrap.addEventListener('change', onChange);
     wrap.addEventListener('input', onInput);
+    wrap.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' && ev.target && ev.target.getAttribute('data-act') === 'picker-q') {
+        ev.preventDefault();
+        runPickerCatalogSearch();
+      }
+    });
     ui.built = true;
   }
 
-  function fillWorkDatalist() {
-    var dl = el('cultWorkNameList');
+  function fillDatalistOptions(id, names) {
+    var dl = el(id);
     if (!dl) return;
-    dl.innerHTML = workMasterNames().map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('');
+    dl.innerHTML = unique(names).map(function (n) { return '<option value="' + esc(n) + '"></option>'; }).join('');
+  }
+
+  function fillWorkDatalist() {
+    var b = store.bundle || {};
+    fillDatalistOptions('cultWorkNameList', workMasterNames());
+    fillDatalistOptions('cultFertNameList', (b.fertilizers || []).map(function (x) { return x && x.name; }));
+    fillDatalistOptions('cultFertMethodList', FERT_METHODS);
+    fillDatalistOptions('cultPestNameList', (b.pesticides || []).map(function (x) { return x && x.name; }));
+    fillDatalistOptions('cultPestMethodList', PEST_METHODS);
   }
 
   async function open(opts) {
@@ -1293,6 +1495,7 @@
   function close() {
     if (ui.dirty && !confirm('保存していない変更があります。閉じますか？')) return;
     ui.dirty = false;
+    closePicker();
     var modal = el('cultSettingModal');
     if (modal) modal.style.display = 'none';
   }
@@ -1303,6 +1506,7 @@
     ui.dirty = false;
     ui.openWork = '';
     ui.simResult = null;
+    closePicker();
   }
 
   function renderTabs() {
@@ -1401,6 +1605,8 @@
       '<button type="button" class="cult-btn cult-btn--ghost" data-act="load-default">標準テンプレートを読み込む</button>' +
       '</div></div>';
 
+    h += renderFertSection(d);
+    h += renderPestSection(d);
     h += renderSimSection(d);
 
     h += '<div class="cult-footer">';
@@ -1411,14 +1617,31 @@
     return h;
   }
 
+  function workLinkedMatsHtml(workId, d) {
+    var ferts = (d.fertilizers || []).filter(function (f) { return f.workId === workId && f.name; });
+    var pests = (d.pesticides || []).filter(function (p) { return p.workId === workId && p.name; });
+    if (!ferts.length && !pests.length) return '';
+    var chips = [];
+    ferts.forEach(function (f) {
+      var r = f.round > 0 ? f.round + '回目: ' : '';
+      chips.push('<span class="cult-mat-chip cult-mat-chip--fert">🧪 ' + esc(r + formatFertilizerLine(f, 0)) + '</span>');
+    });
+    pests.forEach(function (p) {
+      var r = p.round > 0 ? p.round + '回目: ' : '';
+      chips.push('<span class="cult-mat-chip cult-mat-chip--pest">🧴 ' + esc(r + formatPesticideLine(p, 0)) + '</span>');
+    });
+    return '<div class="cult-mat-chips">' + chips.join('') + '</div>';
+  }
+
   function renderWorkCard(w, i, d) {
     var cat = categoryMeta(w.category);
     var isOpen = ui.openWork === w.id;
-    var h = '<div class="cult-work-card' + (isOpen ? ' is-open' : '') + '" data-w="' + i + '">';
+    var matsHtml = workLinkedMatsHtml(w.id, d);
+    var h = '<div class="cult-work-card' + (isOpen ? ' is-open' : '') + '" data-w="' + i + '" data-wid="' + esc(w.id) + '">';
     h += '<div class="cult-work-sum">';
     h += '<span class="cult-cat" style="background:' + cat.bg + ';color:' + cat.color + ';">' + esc(cat.label) + '</span>';
     h += '<span class="cult-work-name">' + esc(w.name || '（作業名なし）') + '</span>';
-    h += '<span class="cult-work-desc">' + esc(workSummary(w, d)) + '</span>';
+    h += '<span class="cult-work-desc">' + esc(workSummary(w, d)) + matsHtml + '</span>';
     h += '<span class="cult-work-btns">' +
       '<button type="button" class="cult-icon-btn" data-act="move-up" data-w="' + i + '" title="上へ"' + (i === 0 ? ' disabled' : '') + '>↑</button>' +
       '<button type="button" class="cult-icon-btn" data-act="move-down" data-w="' + i + '" title="下へ"' + (i === d.works.length - 1 ? ' disabled' : '') + '>↓</button>' +
@@ -1476,6 +1699,131 @@
       return '<label class="cult-check"><input type="checkbox" data-wf="cond" data-cond="' + c.key + '"' + attr + (on ? ' checked' : '') + '> ' + esc(c.label) + '</label>';
     }).join('') + '</div></div>';
     h += '<label class="cult-field cult-field--wide">メモ<input class="cult-input" data-wf="note"' + attr + ' value="' + esc(w.note) + '" placeholder="作業のポイントなど"></label>';
+    var linkedHtml = workLinkedMatsHtml(w.id, d);
+    h += '<div class="cult-work-mats-box">' +
+      '<div class="cult-work-mats-head"><b>この作業の施肥・農薬</b>' +
+      '  <button type="button" class="cult-btn cult-btn--sm" data-act="add-fert" data-wid="' + esc(w.id) + '">＋ 🧪 この作業に施肥を追加</button>' +
+      '  <button type="button" class="cult-btn cult-btn--sm" data-act="add-pest" data-wid="' + esc(w.id) + '">＋ 🧴 この作業に農薬を追加</button>' +
+      '</div>' +
+      (linkedHtml || '<div class="cult-muted">下の「🧪 施肥内容」「🧴 農薬内容」からも登録できます。</div>') +
+      '</div>';
+    h += '</div>';
+    return h;
+  }
+
+  function unitOptionsHtml(units, current) {
+    var list = units.slice();
+    if (current && list.indexOf(current) < 0) list.push(current);
+    return list.map(function (u) {
+      return '<option value="' + esc(u) + '"' + (u === current ? ' selected' : '') + '>' + esc(u) + '</option>';
+    }).join('');
+  }
+
+  function materialLinkControlsHtml(item, idx, d, kind) {
+    var attrName = kind === 'fert' ? 'data-ff' : 'data-pf';
+    var idxAttr = kind === 'fert' ? ('data-fi="' + idx + '"') : ('data-pi="' + idx + '"');
+    var total = kind === 'fert' ? (d.fertilizers || []).length : (d.pesticides || []).length;
+    var workMap = {};
+    (d.works || []).forEach(function (w) { workMap[w.id] = w; });
+    var selWork = workMap[item.workId];
+    var workOpts = '<option value="">作物共通（作業指定なし）</option>' + (d.works || []).map(function (w) {
+      return '<option value="' + esc(w.id) + '"' + (w.id === item.workId ? ' selected' : '') + '>' + esc(w.name || '（作業名なし）') + '</option>';
+    }).join('');
+    var roundHtml = '';
+    if (selWork && selWork.repeat > 1) {
+      var rOpts = '<option value="0"' + (!item.round ? ' selected' : '') + '>毎回</option>';
+      for (var r = 1; r <= selWork.repeat; r++) {
+        rOpts += '<option value="' + r + '"' + (item.round === r ? ' selected' : '') + '>' + r + '回目</option>';
+      }
+      roundHtml = '<label class="cult-field-inline">適用回 <select class="cult-input" ' + attrName + '="round" ' + idxAttr + '>' + rOpts + '</select></label>';
+    }
+    var moveAct = kind === 'fert' ? 'fert' : 'pest';
+    return '<div class="cult-mat-head">' +
+      '<label class="cult-field-inline">対象作業 <select class="cult-input" ' + attrName + '="workId" ' + idxAttr + '>' + workOpts + '</select></label>' +
+      roundHtml +
+      '<span class="cult-spacer"></span>' +
+      '<span class="cult-work-btns">' +
+      '  <button type="button" class="cult-icon-btn" data-act="move-' + moveAct + '-up" ' + idxAttr + ' title="上へ"' + (idx === 0 ? ' disabled' : '') + '>↑</button>' +
+      '  <button type="button" class="cult-icon-btn" data-act="move-' + moveAct + '-down" ' + idxAttr + ' title="下へ"' + (idx === total - 1 ? ' disabled' : '') + '>↓</button>' +
+      '  <button type="button" class="cult-icon-btn cult-icon-btn--danger" data-act="remove-' + moveAct + '" ' + idxAttr + ' title="削除">🗑</button>' +
+      '</span>' +
+      '</div>';
+  }
+
+  function npkSummaryHtml(fertilizers) {
+    var npk = calcNpkPer10a(fertilizers);
+    if (!npk.hasAny) return '';
+    return '<span class="cult-chip cult-chip--ok">10aあたり成分計 N: ' + esc(npk.n) + ' / P: ' + esc(npk.p) + ' / K: ' + esc(npk.k) + ' kg</span>';
+  }
+
+  function renderFertSection(d) {
+    var list = d.fertilizers || (d.fertilizers = []);
+    var h = '<div class="cult-section" id="cultFertSection">';
+    h += '<div class="cult-section-head"><b>🧪 施肥内容（' + list.length + '件）</b>' +
+      '<span id="cultNpkSummary">' + npkSummaryHtml(list) + '</span>' +
+      '<span class="cult-muted">対象作業を選ぶと栽培歴・作業予定にも表示されます</span></div>';
+    if (!list.length) {
+      h += '<div class="cult-empty" style="padding:14px 10px;">施肥内容がまだ登録されていません。「＋ 施肥内容を追加」から登録してください。</div>';
+    } else {
+      h += '<div class="cult-mat-list">';
+      list.forEach(function (f, i) {
+        var attr = ' data-fi="' + i + '"';
+        h += '<div class="cult-mat-card cult-mat-card--fert" data-fi="' + i + '">';
+        h += materialLinkControlsHtml(f, i, d, 'fert');
+        h += '<div class="cult-grid">';
+        h += '<label class="cult-field cult-field--wide">肥料名' +
+          '<span class="cult-input-with-btn"><input class="cult-input" list="cultFertNameList" data-ff="name"' + attr + ' value="' + esc(f.name) + '" placeholder="例: 鶏ふん / 化成8-8-8">' +
+          '<button type="button" class="cult-btn cult-btn--sm" data-act="pick-fert"' + attr + '>🔍 検索</button></span></label>';
+        h += '<label class="cult-field">施用量（10aあたり）' +
+          '<span class="cult-field-row"><input type="number" step="any" min="0" class="cult-input" data-ff="amount"' + attr + ' value="' + esc(f.amount == null ? '' : f.amount) + '" placeholder="例: 100">' +
+          '<select class="cult-input cult-input--unit" data-ff="unit"' + attr + '>' + unitOptionsHtml(FERT_UNITS, f.unit || 'kg/10a') + '</select></span></label>';
+        h += '<label class="cult-field">施肥方法<input class="cult-input" list="cultFertMethodList" data-ff="method"' + attr + ' value="' + esc(f.method) + '" placeholder="例: 元肥・全面混和"></label>';
+        h += '<div class="cult-field">保証成分 %（任意）<div class="cult-npk-row">' +
+          '<label>N<input type="number" step="any" min="0" class="cult-input" data-ff="n"' + attr + ' value="' + esc(f.n == null ? '' : f.n) + '" placeholder="-"></label>' +
+          '<label>P<input type="number" step="any" min="0" class="cult-input" data-ff="p"' + attr + ' value="' + esc(f.p == null ? '' : f.p) + '" placeholder="-"></label>' +
+          '<label>K<input type="number" step="any" min="0" class="cult-input" data-ff="k"' + attr + ' value="' + esc(f.k == null ? '' : f.k) + '" placeholder="-"></label>' +
+          '</div></div>';
+        h += '<label class="cult-field cult-field--wide">備考<input class="cult-input" data-ff="note"' + attr + ' value="' + esc(f.note) + '" placeholder="施用のポイントなど"></label>';
+        h += '</div></div>';
+      });
+      h += '</div>';
+    }
+    h += '<div class="cult-actions-left"><button type="button" class="cult-btn" data-act="add-fert">＋ 施肥内容を追加</button></div>';
+    h += '</div>';
+    return h;
+  }
+
+  function renderPestSection(d) {
+    var list = d.pesticides || (d.pesticides = []);
+    var h = '<div class="cult-section" id="cultPestSection">';
+    h += '<div class="cult-section-head"><b>🧴 農薬内容（' + list.length + '件）</b>' +
+      '<span class="cult-muted">農薬マスタ・全国カタログから検索して希釈倍率や対象病害虫を入力できます</span></div>';
+    if (!list.length) {
+      h += '<div class="cult-empty" style="padding:14px 10px;">農薬内容がまだ登録されていません。「＋ 農薬内容を追加」から登録してください。</div>';
+    } else {
+      h += '<div class="cult-mat-list">';
+      list.forEach(function (p, i) {
+        var attr = ' data-pi="' + i + '"';
+        h += '<div class="cult-mat-card cult-mat-card--pest" data-pi="' + i + '">';
+        h += materialLinkControlsHtml(p, i, d, 'pest');
+        h += '<div class="cult-grid">';
+        h += '<label class="cult-field cult-field--wide">農薬名' +
+          '<span class="cult-input-with-btn"><input class="cult-input" list="cultPestNameList" data-pf="name"' + attr + ' value="' + esc(p.name) + '" placeholder="例: アミスター20フロアブル">' +
+          '<button type="button" class="cult-btn cult-btn--sm" data-act="pick-pest"' + attr + '>🔍 検索</button></span>' +
+          (p.activeIngredient ? '<small>有効成分: ' + esc(p.activeIngredient) + '</small>' : '') + '</label>';
+        h += '<label class="cult-field">希釈倍率<input class="cult-input" data-pf="dilution"' + attr + ' value="' + esc(p.dilution) + '" placeholder="例: 1000倍"></label>';
+        h += '<label class="cult-field">散布量・使用量' +
+          '<span class="cult-field-row"><input type="number" step="any" min="0" class="cult-input" data-pf="amount"' + attr + ' value="' + esc(p.amount == null ? '' : p.amount) + '" placeholder="例: 150">' +
+          '<select class="cult-input cult-input--unit" data-pf="unit"' + attr + '>' + unitOptionsHtml(PEST_UNITS, p.unit || 'L/10a') + '</select></span></label>';
+        h += '<label class="cult-field">対象病害虫<input class="cult-input" data-pf="target"' + attr + ' value="' + esc(p.target) + '" placeholder="例: アブラムシ・うどんこ病"></label>';
+        h += '<label class="cult-field">使用時期・方法<input class="cult-input" list="cultPestMethodList" data-pf="method"' + attr + ' value="' + esc(p.method) + '" placeholder="例: 散布 / 収穫前日まで"></label>';
+        h += '<label class="cult-field">収穫前日数<span class="cult-field-row"><input type="number" min="0" class="cult-input" data-pf="phiDays"' + attr + ' value="' + esc(p.phiDays == null ? '' : p.phiDays) + '" placeholder="なし"> 日</span></label>';
+        h += '<label class="cult-field cult-field--wide">備考<input class="cult-input" data-pf="note"' + attr + ' value="' + esc(p.note) + '" placeholder="ローテーション・注意点など"></label>';
+        h += '</div></div>';
+      });
+      h += '</div>';
+    }
+    h += '<div class="cult-actions-left"><button type="button" class="cult-btn" data-act="add-pest">＋ 農薬内容を追加</button></div>';
     h += '</div>';
     return h;
   }
@@ -1520,12 +1868,22 @@
         '・予報 ' + esc(mdLabel(series.fcstEnd)) + 'まで、以降は平年値' + (series.normalsYears ? '（' + esc(series.normalsYears) + '）' : '（簡易）') + '</div>';
       if (series.notes.length) h += '<div class="cult-warn">' + esc(series.notes.join(' / ')) + '</div>';
       h += '<div class="cult-table-wrap"><table class="cult-table"><thead><tr><th>区分</th><th>作業</th><th>予定日</th><th>期限日</th><th>算出根拠</th><th>使った気象</th></tr></thead><tbody>';
+      var simArea = fieldAreaA(ui.sim.fieldId);
       res.instances.forEach(function (it) {
         var cat = categoryMeta(it.category);
         var dap = it.start ? diffDays(plantDate, it.start) : NaN;
+        var matChips = [];
+        (it.fertilizers || []).forEach(function (f) {
+          var l = formatFertilizerLine(f, simArea);
+          if (l) matChips.push('<span class="cult-mat-chip cult-mat-chip--fert">🧪 ' + esc(l) + '</span>');
+        });
+        (it.pesticides || []).forEach(function (p) {
+          var l = formatPesticideLine(p, simArea);
+          if (l) matChips.push('<span class="cult-mat-chip cult-mat-chip--pest">🧴 ' + esc(l) + '</span>');
+        });
         h += '<tr class="' + (it.status === 'na' || it.status === 'unreached' ? 'is-muted' : '') + '">' +
           '<td><span class="cult-cat" style="background:' + cat.bg + ';color:' + cat.color + ';">' + esc(cat.label) + '</span></td>' +
-          '<td>' + esc(it.name) + (it.note ? '<div class="cult-note">' + esc(it.note) + '</div>' : '') + '</td>' +
+          '<td>' + esc(it.name) + (matChips.length ? '<div class="cult-mat-chips">' + matChips.join('') + '</div>' : '') + (it.note ? '<div class="cult-note">' + esc(it.note) + '</div>' : '') + '</td>' +
           '<td>' + (it.start ? esc(ymdLabel(it.start)) + '<span class="cult-muted">（' + (dap >= 0 ? '+' : '') + dap + '日）</span>' : '-') + '</td>' +
           '<td>' + (it.end ? esc(mdLabel(it.end)) : '-') + '</td>' +
           '<td>' + esc(it.basis) + '</td>' +
@@ -1619,8 +1977,148 @@
     if (!card || !w) return;
     var desc = card.querySelector('.cult-work-desc');
     var name = card.querySelector('.cult-work-name');
-    if (desc) desc.textContent = workSummary(normalizeWork(w), normalizeSetting(ui.draft, ui.crop));
+    if (desc) desc.innerHTML = esc(workSummary(normalizeWork(w), normalizeSetting(ui.draft, ui.crop))) + workLinkedMatsHtml(w.id, ui.draft);
     if (name) name.textContent = w.name || '（作業名なし）';
+  }
+
+  function refreshLinkedWorkCard(workId) {
+    if (!workId || !ui.draft) return;
+    for (var i = 0; i < ui.draft.works.length; i++) {
+      if (ui.draft.works[i].id === workId) {
+        refreshWorkSummary(i);
+        break;
+      }
+    }
+  }
+
+  function refreshNpkSummary() {
+    var box = el('cultNpkSummary');
+    if (box && ui.draft) box.innerHTML = npkSummaryHtml(ui.draft.fertilizers);
+  }
+
+  function defaultWorkIdForMaterial(d, pattern) {
+    var works = (d && d.works) || [];
+    for (var i = 0; i < works.length; i++) {
+      if (pattern.test(String(works[i].name || ''))) return works[i].id;
+    }
+    return '';
+  }
+
+  function findMasterFertilizerByName(name) {
+    var target = String(name || '').trim();
+    if (!target) return null;
+    var list = (store.bundle && store.bundle.fertilizers) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && String(list[i].name || '').trim() === target) return list[i];
+    }
+    return null;
+  }
+
+  function findMasterPesticideByName(name, cropName) {
+    var target = String(name || '').trim();
+    if (!target) return null;
+    var list = (store.bundle && store.bundle.pesticides) || [];
+    var cb = baseCropName(cropName);
+    var fallback = null;
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i] || String(list[i].name || '').trim() !== target) continue;
+      if (cb && list[i].cropName && cropCompatible(cb, baseCropName(list[i].cropName))) return list[i];
+      if (!fallback) fallback = list[i];
+    }
+    return fallback;
+  }
+
+  function applyMasterFertilizerToItem(f, m) {
+    if (!f || !m) return;
+    f.name = String(m.name || f.name || '').trim();
+    var pn = optNum(m.nitrogen);
+    var pp = optNum(m.phosphate);
+    var pk = optNum(m.potash);
+    if (pn != null && f.n == null) f.n = pn;
+    if (pp != null && f.p == null) f.p = pp;
+    if (pk != null && f.k == null) f.k = pk;
+  }
+
+  function applyMasterPesticideToItem(p, m) {
+    if (!p || !m) return;
+    p.name = String(m.name || p.name || '').trim();
+    if (m.dilution && !p.dilution) p.dilution = String(m.dilution).trim();
+    if (m.phiDays !== '' && m.phiDays != null && p.phiDays == null) {
+      var phi = optNum(m.phiDays);
+      if (phi != null) p.phiDays = phi;
+    }
+    var methodText = [m.usageMethod, m.useTimingText].filter(Boolean).join(' / ');
+    if (methodText && !p.method) p.method = methodText;
+    if (m.targetPest && !p.target) p.target = String(m.targetPest).trim();
+    if (m.activeIngredient && !p.activeIngredient) p.activeIngredient = String(m.activeIngredient).trim();
+  }
+
+  function applyFertField(target) {
+    var i = Number(target.getAttribute('data-fi'));
+    var f = ui.draft && ui.draft.fertilizers && ui.draft.fertilizers[i];
+    if (!f) return false;
+    var key = target.getAttribute('data-ff');
+    var v = target.value;
+    var structural = false;
+    switch (key) {
+      case 'name': f.name = v; break;
+      case 'amount': f.amount = optNum(v); break;
+      case 'unit': f.unit = v; break;
+      case 'method': f.method = v; break;
+      case 'n': f.n = optNum(v); break;
+      case 'p': f.p = optNum(v); break;
+      case 'k': f.k = optNum(v); break;
+      case 'note': f.note = v; break;
+      case 'workId':
+        f.workId = v;
+        f.round = 0;
+        structural = true;
+        break;
+      case 'round':
+        f.round = Math.max(0, Math.round(num(v, 0)));
+        break;
+      default: return false;
+    }
+    markDirty();
+    if (structural) {
+      render();
+    } else {
+      refreshNpkSummary();
+      refreshLinkedWorkCard(f.workId);
+    }
+    return true;
+  }
+
+  function applyPestField(target) {
+    var i = Number(target.getAttribute('data-pi'));
+    var p = ui.draft && ui.draft.pesticides && ui.draft.pesticides[i];
+    if (!p) return false;
+    var key = target.getAttribute('data-pf');
+    var v = target.value;
+    var structural = false;
+    switch (key) {
+      case 'name': p.name = v; break;
+      case 'dilution': p.dilution = v; break;
+      case 'amount': p.amount = optNum(v); break;
+      case 'unit': p.unit = v; break;
+      case 'target': p.target = v; break;
+      case 'method': p.method = v; break;
+      case 'phiDays': p.phiDays = optNum(v); break;
+      case 'note': p.note = v; break;
+      case 'workId':
+        p.workId = v;
+        p.round = 0;
+        structural = true;
+        break;
+      case 'round':
+        p.round = Math.max(0, Math.round(num(v, 0)));
+        break;
+      default: return false;
+    }
+    markDirty();
+    if (structural) render();
+    else refreshLinkedWorkCard(p.workId);
+    return true;
   }
 
   function applyWorkField(target) {
@@ -1664,6 +2162,12 @@
       case 'repeatTrigger': w.repeatTrigger = v; break;
       case 'repeat':
         w.repeat = Math.max(1, Math.min(30, Math.round(num(v, 1))));
+        (ui.draft.fertilizers || []).forEach(function (x) {
+          if (x.workId === w.id && (w.repeat <= 1 || x.round > w.repeat)) x.round = 0;
+        });
+        (ui.draft.pesticides || []).forEach(function (x) {
+          if (x.workId === w.id && (w.repeat <= 1 || x.round > w.repeat)) x.round = 0;
+        });
         structural = true;
         break;
       case 'cond': {
@@ -1690,11 +2194,241 @@
     return true;
   }
 
+  // ---------------------------------------------------------------------
+  // 肥料・農薬 カタログ/マスタ検索ピッカー
+  // ---------------------------------------------------------------------
+  function closePicker() {
+    ui.picker = null;
+    var box = el('cultCatalogPicker');
+    if (box) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+    }
+  }
+
+  function openPicker(kind, idx) {
+    var list = kind === 'fert' ? (ui.draft && ui.draft.fertilizers) : (ui.draft && ui.draft.pesticides);
+    var cur = list && list[idx];
+    ui.picker = {
+      kind: kind,
+      idx: idx,
+      q: (cur && cur.name) || '',
+      loading: false,
+      error: '',
+      catalogHits: [],
+      searched: false,
+      appTableFor: null,
+      appRows: [],
+      appLoading: false,
+      showAllCrops: false
+    };
+    renderPicker();
+    var inp = el('cultPickerInput');
+    if (inp) setTimeout(function () { inp.focus(); }, 30);
+  }
+
+  function filterMasterList(list, q, kind) {
+    var needle = String(q || '').trim().toLowerCase();
+    var cb = baseCropName(ui.crop);
+    var out = (list || []).filter(function (m) {
+      if (!m || !m.name) return false;
+      if (!needle) return true;
+      var hay = [m.name, m.manufacturer, m.fertilizerType, m.components, m.cropName, m.activeIngredient, m.regNumber].join(' ').toLowerCase();
+      return hay.indexOf(needle) >= 0;
+    });
+    if (kind === 'pest' && cb) {
+      out.sort(function (a, b) {
+        var am = a.cropName && cropCompatible(cb, baseCropName(a.cropName)) ? 0 : 1;
+        var bm = b.cropName && cropCompatible(cb, baseCropName(b.cropName)) ? 0 : 1;
+        if (am !== bm) return am - bm;
+        return String(a.name).localeCompare(String(b.name), 'ja');
+      });
+    }
+    return out.slice(0, 40);
+  }
+
+  function renderPicker() {
+    var box = el('cultCatalogPicker');
+    var pk = ui.picker;
+    if (!box || !pk) return;
+    box.style.display = 'flex';
+    var isFert = pk.kind === 'fert';
+    var b = store.bundle || {};
+    var masters = filterMasterList(isFert ? b.fertilizers : b.pesticides, pk.q, pk.kind);
+    var h = '<div class="cult-picker-dialog" role="dialog" aria-label="' + (isFert ? '肥料検索' : '農薬検索') + '">';
+    h += '<div class="cult-head">' +
+      '<div class="cult-title">' + (isFert ? '🧪 肥料を検索して選択' : '🧴 農薬を検索して選択') + '</div>' +
+      '<button type="button" class="cult-close" data-act="picker-close" aria-label="閉じる">×</button>' +
+      '</div>';
+    h += '<div class="cult-picker-body">';
+    if (pk.appTableFor) {
+      h += renderPickerAppTable(pk);
+    } else {
+      h += '<div class="cult-bar">' +
+        '<input id="cultPickerInput" type="search" class="cult-input" style="flex:1;" data-act="picker-q" value="' + esc(pk.q) + '" placeholder="' + (isFert ? '肥料名・成分・メーカーで検索' : '農薬名・有効成分で検索') + '">' +
+        '<button type="button" class="cult-btn cult-btn--primary" data-act="picker-search"' + (pk.loading ? ' disabled' : '') + '>' + (pk.loading ? '検索中...' : '全国カタログ検索') + '</button>' +
+        '</div>';
+      if (pk.error) h += '<div class="cult-warn">' + esc(pk.error) + '</div>';
+      h += '<div class="cult-picker-sub">自社マスタ（' + masters.length + '件）</div>';
+      if (!masters.length) {
+        h += '<div class="cult-muted" style="margin-bottom:10px;">該当する自社マスタがありません。上の「全国カタログ検索」も利用できます。</div>';
+      } else {
+        h += '<div class="cult-picker-list">';
+        masters.forEach(function (m, mi) {
+          var sub = isFert
+            ? [m.fertilizerType, (m.nitrogen || m.phosphate || m.potash) ? ('N' + (m.nitrogen || '-') + '-P' + (m.phosphate || '-') + '-K' + (m.potash || '-')) : m.components, m.manufacturer].filter(Boolean).join(' ／ ')
+            : [m.cropName ? ('作物: ' + m.cropName) : '', m.dilution, m.phiDays !== '' && m.phiDays != null ? ('収穫' + m.phiDays + '日前') : '', m.activeIngredient].filter(Boolean).join(' ／ ');
+          h += '<button type="button" class="cult-picker-item" data-act="picker-pick-master" data-mi="' + mi + '">' +
+            '<b>' + esc(m.name) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</button>';
+        });
+        h += '</div>';
+      }
+      if (pk.searched) {
+        h += '<div class="cult-picker-sub" style="margin-top:12px;">全国カタログ（' + pk.catalogHits.length + '件）</div>';
+        if (!pk.catalogHits.length) {
+          h += '<div class="cult-muted">カタログに該当する項目がありませんでした。</div>';
+        } else {
+          h += '<div class="cult-picker-list">';
+          pk.catalogHits.forEach(function (c, ci) {
+            var csub = isFert
+              ? [c.fertilizerType, (c.nitrogen || c.phosphate || c.potash) ? ('N' + (c.nitrogen || '-') + '-P' + (c.phosphate || '-') + '-K' + (c.potash || '-')) : c.guaranteedComponents || c.components, c.manufacturer].filter(Boolean).join(' ／ ')
+              : [c.activeIngredient, c.manufacturer, c.regNumber ? ('登録: ' + c.regNumber) : ''].filter(Boolean).join(' ／ ');
+            h += '<button type="button" class="cult-picker-item" data-act="picker-pick-cat" data-ci="' + ci + '">' +
+              '<b>' + esc(c.name) + '</b>' + (csub ? '<span>' + esc(csub) + '</span>' : '') + '</button>';
+          });
+          h += '</div>';
+        }
+      }
+    }
+    h += '</div></div>';
+    box.innerHTML = h;
+    pk._mastersShown = masters;
+  }
+
+  function renderPickerAppTable(pk) {
+    var cb = baseCropName(ui.crop);
+    var rows = pk.appRows || [];
+    var matched = cb ? rows.filter(function (r) { return r.cropName && cropCompatible(cb, baseCropName(r.cropName)); }) : rows;
+    var shown = (pk.showAllCrops || !matched.length) ? rows : matched;
+    var h = '<div class="cult-bar">' +
+      '<button type="button" class="cult-btn cult-btn--ghost" data-act="picker-back">← 検索結果に戻る</button>' +
+      '<b style="font-size:14px;">' + esc(pk.appTableFor.name) + '</b>' +
+      '<span class="cult-spacer"></span>' +
+      '<button type="button" class="cult-btn" data-act="picker-use-name-only">農薬名だけ入力</button>' +
+      '</div>';
+    if (pk.appLoading) return h + '<div class="cult-muted">適用表を読み込んでいます...</div>';
+    if (pk.error) return h + '<div class="cult-warn">' + esc(pk.error) + '</div>';
+    if (!rows.length) return h + '<div class="cult-muted">適用表が見つかりませんでした。「農薬名だけ入力」で選択できます。</div>';
+    if (cb && matched.length && matched.length < rows.length) {
+      h += '<div class="cult-bar"><span class="cult-muted">「' + esc(ui.crop) + '」に一致する適用（' + matched.length + '件 / 全' + rows.length + '件）</span>' +
+        '<button type="button" class="cult-link-btn" data-act="picker-toggle-all-crops">' + (pk.showAllCrops ? 'この作物だけ表示' : 'すべての作物を表示') + '</button></div>';
+    }
+    h += '<div class="cult-picker-list">';
+    shown.slice(0, 80).forEach(function (r, ri) {
+      var details = [r.targetPest, r.dilution, r.usageAmount, r.useTimingText, r.usageMethod].filter(Boolean).join(' ／ ');
+      h += '<button type="button" class="cult-picker-item" data-act="picker-pick-app" data-ri="' + ri + '">' +
+        '<b>' + esc(r.cropName || '作物指定なし') + (r.targetPest ? '・' + esc(r.targetPest) : '') + '</b>' +
+        (details ? '<span>' + esc(details) + '</span>' : '') + '</button>';
+    });
+    h += '</div>';
+    pk._appShown = shown.slice(0, 80);
+    return h;
+  }
+
+  async function runPickerCatalogSearch() {
+    var pk = ui.picker;
+    if (!pk) return;
+    var q = String(pk.q || '').trim();
+    if (!q) {
+      pk.error = '検索キーワードを入力してください';
+      renderPicker();
+      return;
+    }
+    if (typeof global.callGAS !== 'function') {
+      pk.error = '通信の準備ができていません';
+      renderPicker();
+      return;
+    }
+    pk.loading = true;
+    pk.error = '';
+    renderPicker();
+    try {
+      var res = pk.kind === 'fert'
+        ? await global.callGAS('searchFertilizerCatalog', { q: q, limit: 30 })
+        : await global.callGAS('searchPesticideCatalog', { q: q, groupByName: true, limit: 30 });
+      pk.catalogHits = (res && res.items) || [];
+      pk.searched = true;
+    } catch (e) {
+      pk.error = (e && e.message) || String(e);
+    } finally {
+      pk.loading = false;
+      renderPicker();
+    }
+  }
+
+  async function openPickerAppTable(catItem) {
+    var pk = ui.picker;
+    if (!pk || !catItem) return;
+    pk.appTableFor = catItem;
+    pk.appRows = [];
+    pk.appLoading = true;
+    pk.error = '';
+    pk.showAllCrops = false;
+    renderPicker();
+    try {
+      var res = await global.callGAS('getPesticideApplicationTable', {
+        name: catItem.name,
+        regNumber: catItem.regNumber || '',
+        limit: 200
+      });
+      pk.appRows = (res && res.items) || [];
+    } catch (e) {
+      pk.error = (e && e.message) || String(e);
+    } finally {
+      pk.appLoading = false;
+      renderPicker();
+    }
+  }
+
+  function commitPickerSelection(applyFn) {
+    var pk = ui.picker;
+    if (!pk || !ui.draft) return;
+    var list = pk.kind === 'fert' ? ui.draft.fertilizers : ui.draft.pesticides;
+    var item = list && list[pk.idx];
+    if (item) {
+      applyFn(item);
+      markDirty();
+    }
+    closePicker();
+    render();
+  }
+
   function onInput(ev) {
     var t = ev.target;
     if (!t || !t.getAttribute) return;
+    if (t.getAttribute('data-act') === 'picker-q' && ui.picker) {
+      ui.picker.q = t.value;
+      var pos = t.selectionStart;
+      renderPicker();
+      var inp = el('cultPickerInput');
+      if (inp) {
+        inp.focus();
+        try { inp.setSelectionRange(pos, pos); } catch (e) { }
+      }
+      return;
+    }
     if (t.hasAttribute('data-wf') && (t.getAttribute('data-wf') === 'name' || t.getAttribute('data-wf') === 'aliases' || t.getAttribute('data-wf') === 'note')) {
       applyWorkField(t);
+      return;
+    }
+    if (t.hasAttribute('data-ff')) {
+      var ff = t.getAttribute('data-ff');
+      if (ff !== 'workId' && ff !== 'round' && ff !== 'unit') applyFertField(t);
+      return;
+    }
+    if (t.hasAttribute('data-pf')) {
+      var pf = t.getAttribute('data-pf');
+      if (pf !== 'workId' && pf !== 'round' && pf !== 'unit') applyPestField(t);
     }
   }
 
@@ -1703,6 +2437,32 @@
     if (!t || !t.getAttribute) return;
     if (t.hasAttribute('data-wf')) {
       applyWorkField(t);
+      return;
+    }
+    if (t.hasAttribute('data-ff')) {
+      applyFertField(t);
+      if (t.getAttribute('data-ff') === 'name') {
+        var fi = Number(t.getAttribute('data-fi'));
+        var fItem = ui.draft && ui.draft.fertilizers && ui.draft.fertilizers[fi];
+        var mf = findMasterFertilizerByName(t.value);
+        if (fItem && mf) {
+          applyMasterFertilizerToItem(fItem, mf);
+          render();
+        }
+      }
+      return;
+    }
+    if (t.hasAttribute('data-pf')) {
+      applyPestField(t);
+      if (t.getAttribute('data-pf') === 'name') {
+        var pi = Number(t.getAttribute('data-pi'));
+        var pItem = ui.draft && ui.draft.pesticides && ui.draft.pesticides[pi];
+        var mp = findMasterPesticideByName(t.value, ui.crop);
+        if (pItem && mp) {
+          applyMasterPesticideToItem(pItem, mp);
+          render();
+        }
+      }
       return;
     }
     var f = t.getAttribute('data-f');
@@ -1737,7 +2497,38 @@
     }
   }
 
+  function moveArrayItem(arr, from, delta) {
+    var to = from + delta;
+    if (!Array.isArray(arr) || from < 0 || to < 0 || from >= arr.length || to >= arr.length) return false;
+    var tmp = arr[from];
+    arr[from] = arr[to];
+    arr[to] = tmp;
+    return true;
+  }
+
+  function focusNewMaterialCard(selector) {
+    setTimeout(function () {
+      var cards = document.querySelectorAll('#cultSettingBody ' + selector);
+      var last = cards.length ? cards[cards.length - 1] : null;
+      if (!last) return;
+      try { last.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { }
+      var inp = last.querySelector('input[data-ff="name"], input[data-pf="name"]');
+      if (inp) inp.focus();
+    }, 20);
+  }
+
+  function hasMaterialContent(item, keys) {
+    return keys.some(function (k) {
+      var val = item && item[k];
+      return val !== '' && val != null;
+    });
+  }
+
   async function onClick(ev) {
+    if (ev.target && ev.target.id === 'cultCatalogPicker') {
+      closePicker();
+      return;
+    }
     var tabBtn = ev.target.closest('.cult-tab');
     if (tabBtn) {
       ui.tab = tabBtn.getAttribute('data-tab');
@@ -1748,9 +2539,76 @@
     if (!btn || btn.disabled) return;
     var act = btn.getAttribute('data-act');
     var i = Number(btn.getAttribute('data-w'));
+    var fi = Number(btn.getAttribute('data-fi'));
+    var pi = Number(btn.getAttribute('data-pi'));
     var d = ui.draft;
     switch (act) {
       case 'close': close(); break;
+      case 'picker-close': closePicker(); break;
+      case 'picker-search': runPickerCatalogSearch(); break;
+      case 'picker-back':
+        if (ui.picker) { ui.picker.appTableFor = null; ui.picker.error = ''; renderPicker(); }
+        break;
+      case 'picker-toggle-all-crops':
+        if (ui.picker) { ui.picker.showAllCrops = !ui.picker.showAllCrops; renderPicker(); }
+        break;
+      case 'picker-use-name-only':
+        commitPickerSelection(function (item) {
+          if (ui.picker && ui.picker.appTableFor) {
+            item.name = String(ui.picker.appTableFor.name || '');
+            if (ui.picker.appTableFor.activeIngredient && !item.activeIngredient) {
+              item.activeIngredient = String(ui.picker.appTableFor.activeIngredient);
+            }
+          }
+        });
+        break;
+      case 'picker-pick-master': {
+        var pk1 = ui.picker;
+        var m = pk1 && pk1._mastersShown && pk1._mastersShown[Number(btn.getAttribute('data-mi'))];
+        if (m) {
+          commitPickerSelection(function (item) {
+            if (pk1.kind === 'fert') applyMasterFertilizerToItem(item, m);
+            else applyMasterPesticideToItem(item, m);
+          });
+        }
+        break;
+      }
+      case 'picker-pick-cat': {
+        var pk2 = ui.picker;
+        var c = pk2 && pk2.catalogHits && pk2.catalogHits[Number(btn.getAttribute('data-ci'))];
+        if (!c) break;
+        if (pk2.kind === 'fert') {
+          commitPickerSelection(function (item) { applyMasterFertilizerToItem(item, c); });
+        } else {
+          openPickerAppTable(c);
+        }
+        break;
+      }
+      case 'picker-pick-app': {
+        var pk3 = ui.picker;
+        var r = pk3 && pk3._appShown && pk3._appShown[Number(btn.getAttribute('data-ri'))];
+        if (r) {
+          commitPickerSelection(function (item) {
+            applyMasterPesticideToItem(item, r);
+            if (r.usageAmount) {
+              var mAmt = String(r.usageAmount).match(/^\s*(\d+(?:\.\d+)?)\s*(L|mL|g|kg|本|袋)(?:\/10a)?\s*$/i);
+              if (mAmt && item.amount == null) {
+                item.amount = optNum(mAmt[1]);
+                item.unit = mAmt[2] + '/10a';
+              } else if (!item.note) {
+                item.note = '使用量目安: ' + r.usageAmount;
+              }
+            }
+          });
+        }
+        break;
+      }
+      case 'pick-fert':
+        if (d && d.fertilizers && d.fertilizers[fi]) openPicker('fert', fi);
+        break;
+      case 'pick-pest':
+        if (d && d.pesticides && d.pesticides[pi]) openPicker('pest', pi);
+        break;
       case 'new-crop': {
         var name = String(prompt('作物名を入力してください（例: トマト）') || '').trim();
         if (!name) return;
@@ -1779,30 +2637,90 @@
             x.anchorPoint = 'start';
           }
         });
+        (d.fertilizers || []).forEach(function (f) {
+          if (f.workId === removedId) { f.workId = ''; f.round = 0; }
+        });
+        (d.pesticides || []).forEach(function (p) {
+          if (p.workId === removedId) { p.workId = ''; p.round = 0; }
+        });
         markDirty();
         render();
         break;
       case 'move-up':
-      case 'move-down': {
-        if (!d) return;
-        var j = act === 'move-up' ? i - 1 : i + 1;
-        if (j < 0 || j >= d.works.length) return;
-        var tmp = d.works[i];
-        d.works[i] = d.works[j];
-        d.works[j] = tmp;
+      case 'move-down':
+        if (!d || !moveArrayItem(d.works, i, act === 'move-up' ? -1 : 1)) return;
         markDirty();
         render();
         break;
-      }
       case 'toggle-work':
         if (!d || !d.works[i]) return;
         ui.openWork = ui.openWork === d.works[i].id ? '' : d.works[i].id;
         render();
         break;
+      case 'add-fert': {
+        if (!d) return;
+        var widF = btn.getAttribute('data-wid') || defaultWorkIdForMaterial(d, /元肥|基肥|堆肥|施肥|追肥|液肥/);
+        d.fertilizers = d.fertilizers || [];
+        d.fertilizers.push(normalizeFertilizer({ workId: widF }, d.works.reduce(function (m, x) { m[x.id] = true; return m; }, {}), {}));
+        markDirty();
+        render();
+        focusNewMaterialCard('.cult-mat-card--fert');
+        break;
+      }
+      case 'remove-fert':
+        if (!d || !d.fertilizers || !d.fertilizers[fi]) return;
+        if (!confirm('「' + (d.fertilizers[fi].name || '施肥内容') + '」を削除しますか？')) return;
+        d.fertilizers.splice(fi, 1);
+        markDirty();
+        render();
+        break;
+      case 'move-fert-up':
+      case 'move-fert-down':
+        if (!d || !moveArrayItem(d.fertilizers, fi, act === 'move-fert-up' ? -1 : 1)) return;
+        markDirty();
+        render();
+        break;
+      case 'add-pest': {
+        if (!d) return;
+        var widP = btn.getAttribute('data-wid') || defaultWorkIdForMaterial(d, /防除|消毒|農薬|薬剤|散布|除草/);
+        d.pesticides = d.pesticides || [];
+        d.pesticides.push(normalizePesticide({ workId: widP }, d.works.reduce(function (m, x) { m[x.id] = true; return m; }, {}), {}));
+        markDirty();
+        render();
+        focusNewMaterialCard('.cult-mat-card--pest');
+        break;
+      }
+      case 'remove-pest':
+        if (!d || !d.pesticides || !d.pesticides[pi]) return;
+        if (!confirm('「' + (d.pesticides[pi].name || '農薬内容') + '」を削除しますか？')) return;
+        d.pesticides.splice(pi, 1);
+        markDirty();
+        render();
+        break;
+      case 'move-pest-up':
+      case 'move-pest-down':
+        if (!d || !moveArrayItem(d.pesticides, pi, act === 'move-pest-up' ? -1 : 1)) return;
+        markDirty();
+        render();
+        break;
       case 'load-default':
         if (!d) return;
         if (d.works.length && !confirm('今の作業一覧を、生育モデルから作った標準テンプレートで置き換えますか？')) return;
+        var oldNameById = {};
+        (d.works || []).forEach(function (x) { oldNameById[x.id] = baseWorkName(x.name); });
         var def = buildDefaultSetting(ui.crop);
+        var newIdByBase = {};
+        def.works.forEach(function (x) {
+          var bn = baseWorkName(x.name);
+          if (bn && !newIdByBase[bn]) newIdByBase[bn] = x.id;
+        });
+        var remapMat = function (m) {
+          var bn = oldNameById[m.workId];
+          m.workId = (bn && newIdByBase[bn]) || '';
+          m.round = 0;
+        };
+        (d.fertilizers || []).forEach(remapMat);
+        (d.pesticides || []).forEach(remapMat);
         d.works = def.works;
         d.baseTemp = def.baseTemp;
         d.capTemp = def.capTemp;
@@ -1816,6 +2734,20 @@
         var empty = d.works.filter(function (x) { return !String(x.name || '').trim(); });
         if (empty.length) {
           notify('作業名が空の作業があります。入力するか削除してください。');
+          return;
+        }
+        var badFert = (d.fertilizers || []).some(function (x) {
+          return !String(x.name || '').trim() && hasMaterialContent(x, ['amount', 'method', 'n', 'p', 'k', 'note']);
+        });
+        if (badFert) {
+          notify('肥料名が空の施肥内容があります。肥料名を入力するか削除してください。');
+          return;
+        }
+        var badPest = (d.pesticides || []).some(function (x) {
+          return !String(x.name || '').trim() && hasMaterialContent(x, ['dilution', 'amount', 'target', 'method', 'phiDays', 'note']);
+        });
+        if (badPest) {
+          notify('農薬名が空の農薬内容があります。農薬名を入力するか削除してください。');
           return;
         }
         var shipping = d.works.filter(function (x) { return String(x.name || '').indexOf('出荷') >= 0; });
@@ -1898,6 +2830,11 @@
     baseCropName: baseCropName,
     cropCompatible: cropCompatible,
     srcMixLabel: srcMixLabel,
+    fieldAreaA: fieldAreaA,
+    formatFertilizerLine: formatFertilizerLine,
+    formatPesticideLine: formatPesticideLine,
+    calcNpkPer10a: calcNpkPer10a,
+    buildMaterialsText: buildMaterialsText,
     onChange: function (fn) { if (typeof fn === 'function') listeners.push(fn); },
     open: open,
     close: close,
