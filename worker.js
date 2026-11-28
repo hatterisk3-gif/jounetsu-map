@@ -5026,6 +5026,10 @@ window.openFieldPhotosList = (id) => {
 
 window.setFieldPhotoFilterTag = (tag, polyId) => {
   window.fieldPhotoActiveFilterTag = tag || 'ALL';
+  if (typeof getRpRecordCalState_ === 'function') {
+    const st = getRpRecordCalState_('photo', polyId || activePolyId);
+    st.selectedDate = '';
+  }
   window.renderFieldPhotosTable(polyId);
 };
 
@@ -6671,6 +6675,472 @@ window.openSavedFieldPhotoAnalysis_ = (recordId, polyId) => {
   }
 };
 
+// ══════════════════════════════════════════════════════════════
+// 📅 右パネル記録一覧（作業記録・生育記録・写真一覧・全履歴）カレンダービュー共通ヘルパー
+// ══════════════════════════════════════════════════════════════
+window._rpRecordCalState_ = window._rpRecordCalState_ || {};
+
+function getRpRecordCalState_(scopeKey, polyId) {
+  const key = String(scopeKey || 'growth');
+  const pid = String(polyId || '');
+  if (!window._rpRecordCalState_[key]) {
+    window._rpRecordCalState_[key] = {
+      viewMode: 'list',
+      polyId: pid,
+      year: 0,
+      month: 0,
+      selectedDate: '',
+      userNavigated: false
+    };
+  }
+  const st = window._rpRecordCalState_[key];
+  if (st.polyId !== pid) {
+    st.polyId = pid;
+    st.year = 0;
+    st.month = 0;
+    st.selectedDate = '';
+    st.userNavigated = false;
+  }
+  return st;
+}
+
+function rpCalTodayJstYmd_() {
+  const d = new Date(Date.now() + 9 * 3600000);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function rpCalParseYmd_(raw) {
+  const s = String(raw || '').trim();
+  const m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (!m) return '';
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const d = parseInt(m[3], 10);
+  if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return '';
+  const check = new Date(Date.UTC(y, mo - 1, d));
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== (mo - 1) || check.getUTCDate() !== d) return '';
+  return `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function rpCalGetItemYmd_(item, scopeKey) {
+  if (!item) return '';
+  const d = (item.data && typeof item.data === 'object') ? item.data : {};
+  const isWork = (item.type === 'work') || !!d.workName;
+  let candidates;
+  if (scopeKey === 'work' || (scopeKey === 'all' && isWork)) {
+    candidates = [d.workDate, item.date, d.photoDate];
+  } else {
+    candidates = [d.photoDate, d.workDate, item.date];
+  }
+  for (let i = 0; i < candidates.length; i++) {
+    const parsed = rpCalParseYmd_(candidates[i]);
+    if (parsed) return parsed;
+  }
+  return '';
+}
+
+function rpCalFormatDateJp_(ymd) {
+  const parsed = rpCalParseYmd_(ymd);
+  if (!parsed) return String(ymd || '');
+  const parts = parsed.split('-').map(Number);
+  const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  const dows = ['日', '月', '火', '水', '木', '金', '土'];
+  return `${parts[0]}/${parts[1]}/${parts[2]} (${dows[dt.getUTCDay()]})`;
+}
+
+function ensureRpRecordCalMonth_(st, items, scopeKey) {
+  if (!st.year || !st.month) {
+    let latestYmd = '';
+    if (Array.isArray(items)) {
+      for (let i = 0; i < items.length; i++) {
+        const ymd = rpCalGetItemYmd_(items[i], scopeKey);
+        if (ymd && ymd > latestYmd) latestYmd = ymd;
+      }
+    }
+    const baseYmd = latestYmd || rpCalTodayJstYmd_();
+    const parts = baseYmd.split('-').map(Number);
+    st.year = parts[0];
+    st.month = parts[1];
+  }
+  if (st.selectedDate) {
+    const ymPrefix = `${String(st.year).padStart(4, '0')}-${String(st.month).padStart(2, '0')}-`;
+    if (st.selectedDate.indexOf(ymPrefix) !== 0) {
+      st.selectedDate = '';
+    }
+  }
+}
+
+function reRenderRpRecordScope_(scopeKey, polyId) {
+  const key = String(scopeKey || 'growth');
+  if (key === 'photo') {
+    if (typeof window.renderFieldPhotosTable === 'function') {
+      window.renderFieldPhotosTable(polyId || activePolyId);
+    }
+    return;
+  }
+  if (key === 'all') {
+    if (typeof window.openAllHistory === 'function') {
+      window.openAllHistory();
+    }
+    return;
+  }
+  if (polyId) activePolyId = polyId;
+  currentFilterType = key;
+  if (typeof window.renderHistoryList === 'function') {
+    window.renderHistoryList();
+  }
+}
+
+window.setRpRecordViewMode_ = (scopeKey, mode, polyId) => {
+  const st = getRpRecordCalState_(scopeKey, polyId);
+  st.viewMode = (mode === 'calendar') ? 'calendar' : 'list';
+  if (st.viewMode === 'calendar' && !st.userNavigated) {
+    st.year = 0;
+    st.month = 0;
+  }
+  reRenderRpRecordScope_(scopeKey, polyId);
+};
+
+window.shiftRpRecordCalMonth_ = (scopeKey, delta, polyId) => {
+  const st = getRpRecordCalState_(scopeKey, polyId);
+  const todayParts = rpCalTodayJstYmd_().split('-').map(Number);
+  const curY = st.year || todayParts[0];
+  const curM = st.month || todayParts[1];
+  const dt = new Date(Date.UTC(curY, curM - 1 + (Number(delta) || 0), 1));
+  st.year = dt.getUTCFullYear();
+  st.month = dt.getUTCMonth() + 1;
+  st.selectedDate = '';
+  st.userNavigated = true;
+  reRenderRpRecordScope_(scopeKey, polyId);
+};
+
+window.jumpRpRecordCalMonth_ = (scopeKey, year, month, selectYmd, polyId) => {
+  const st = getRpRecordCalState_(scopeKey, polyId);
+  const y = parseInt(year, 10);
+  const m = parseInt(month, 10);
+  if (y && m >= 1 && m <= 12) {
+    st.year = y;
+    st.month = m;
+    st.selectedDate = selectYmd ? rpCalParseYmd_(selectYmd) : '';
+    st.userNavigated = true;
+  }
+  reRenderRpRecordScope_(scopeKey, polyId);
+};
+
+window.jumpRpRecordCalToday_ = (scopeKey, polyId) => {
+  const st = getRpRecordCalState_(scopeKey, polyId);
+  const todayParts = rpCalTodayJstYmd_().split('-').map(Number);
+  st.year = todayParts[0];
+  st.month = todayParts[1];
+  st.selectedDate = '';
+  st.userNavigated = true;
+  reRenderRpRecordScope_(scopeKey, polyId);
+};
+
+window.selectRpRecordCalDate_ = (scopeKey, ymd, polyId) => {
+  const st = getRpRecordCalState_(scopeKey, polyId);
+  const parsed = rpCalParseYmd_(ymd);
+  if (!parsed) {
+    st.selectedDate = '';
+    reRenderRpRecordScope_(scopeKey, polyId);
+    return;
+  }
+  const parts = parsed.split('-').map(Number);
+  if (parts[0] !== st.year || parts[1] !== st.month) {
+    st.year = parts[0];
+    st.month = parts[1];
+    st.selectedDate = parsed;
+    st.userNavigated = true;
+  } else {
+    st.selectedDate = (st.selectedDate === parsed) ? '' : parsed;
+  }
+  reRenderRpRecordScope_(scopeKey, polyId);
+};
+
+function buildRpRecordViewToggleHtml_(scopeKey, polyId, opts) {
+  const st = getRpRecordCalState_(scopeKey, polyId);
+  const options = opts || {};
+  const accent = options.accentColor || '#2E7D32';
+  const jsScope = escapeJsSingleFieldPhoto_(scopeKey);
+  const jsPoly = escapeJsSingleFieldPhoto_(polyId || '');
+  const isList = st.viewMode !== 'calendar';
+  return `
+    <div class="rp-view-switch-bar" style="--rp-cal-accent:${escapeHtmlFieldPhoto_(accent)};">
+      <button type="button" class="rp-view-switch-btn${isList ? ' is-active' : ''}" onclick="setRpRecordViewMode_('${jsScope}', 'list', '${jsPoly}')">📋 リスト</button>
+      <button type="button" class="rp-view-switch-btn${!isList ? ' is-active' : ''}" onclick="setRpRecordViewMode_('${jsScope}', 'calendar', '${jsPoly}')">📅 カレンダー</button>
+    </div>
+  `;
+}
+
+function getRpCalCellPhotoInfo_(dayItems, scopeKey, selectMode, selectedKeyIdxMap) {
+  let thumbUrl = '';
+  let totalPhotos = 0;
+  let hasAnalysis = false;
+  let aiSelectedCount = 0;
+
+  for (let i = 0; i < dayItems.length; i++) {
+    const it = dayItems[i];
+    if (!it) continue;
+    const d = (it.data && typeof it.data === 'object') ? it.data : {};
+    if (d.isPhotoAnalysis) {
+      hasAnalysis = true;
+      const ap = (d.photoAnalysis && Array.isArray(d.photoAnalysis.analyzedPhotos)) ? d.photoAnalysis.analyzedPhotos : [];
+      if (!thumbUrl && ap.length) {
+        const rawU = String((ap[0] && (ap[0].url || ap[0].fullUrl)) || '').replace('sz=w1600', 'sz=w800');
+        if (rawU) thumbUrl = rawU;
+      }
+      continue;
+    }
+    const urls = (Array.isArray(it.urls) && it.urls.length) ? it.urls : (it.url ? [it.url] : []);
+    totalPhotos += urls.length;
+    if (!thumbUrl && urls.length) {
+      thumbUrl = String(urls[0]);
+    }
+    if (selectMode && selectedKeyIdxMap && urls.length) {
+      for (let uIdx = 0; uIdx < urls.length; uIdx++) {
+        if (selectedKeyIdxMap.has(String(it.id || '') + '::' + uIdx)) {
+          aiSelectedCount++;
+        }
+      }
+    }
+  }
+  return { thumbUrl, totalPhotos, hasAnalysis, aiSelectedCount };
+}
+
+function buildRpRecordCalendarSectionHtml_(scopeKey, polyId, items, renderCardFn, opts) {
+  const options = opts || {};
+  const accent = options.accentColor || '#2E7D32';
+  const tint = options.tintColor || '#E8F5E9';
+  const selectMode = !!options.selectMode;
+  const selectedKeyIdxMap = options.selectedKeyIdxMap || null;
+  const cardsClass = options.cardsClass ? ` ${options.cardsClass}` : '';
+  const list = Array.isArray(items) ? items : [];
+  const st = getRpRecordCalState_(scopeKey, polyId);
+  ensureRpRecordCalMonth_(st, list, scopeKey);
+
+  const byDate = {};
+  const undated = [];
+  let latestYmd = '';
+
+  list.forEach(item => {
+    const ymd = rpCalGetItemYmd_(item, scopeKey);
+    if (!ymd) {
+      undated.push(item);
+      return;
+    }
+    if (!byDate[ymd]) byDate[ymd] = [];
+    byDate[ymd].push(item);
+    if (!latestYmd || ymd > latestYmd) latestYmd = ymd;
+  });
+
+  const year = st.year;
+  const month = st.month;
+  const ymPrefix = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-`;
+  const monthItems = [];
+  Object.keys(byDate).sort().forEach(ymd => {
+    if (ymd.indexOf(ymPrefix) === 0) {
+      byDate[ymd].forEach(it => monthItems.push(it));
+    }
+  });
+
+  const todayYmd = rpCalTodayJstYmd_();
+  const jsScope = escapeJsSingleFieldPhoto_(scopeKey);
+  const jsPoly = escapeJsSingleFieldPhoto_(polyId || '');
+  const styleVars = `--rp-cal-accent:${escapeHtmlFieldPhoto_(accent)};--rp-cal-tint:${escapeHtmlFieldPhoto_(tint)};`;
+
+  const firstDayDow = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const totalCells = Math.ceil((firstDayDow + daysInMonth) / 7) * 7;
+  const startUtc = Date.UTC(year, month - 1, 1 - firstDayDow);
+  const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+
+  let calHtml = `<div class="rp-cal-wrap" style="${styleVars}">`;
+  calHtml += `
+    <div class="rp-cal-header">
+      <button type="button" class="rp-cal-nav-btn" onclick="shiftRpRecordCalMonth_('${jsScope}', -1, '${jsPoly}')" title="前の月">◀</button>
+      <div class="rp-cal-month-title">
+        <span>${year}年${month}月</span>
+        <span class="rp-cal-month-cnt">${monthItems.length}件</span>
+      </div>
+      <button type="button" class="rp-cal-today-btn" onclick="jumpRpRecordCalToday_('${jsScope}', '${jsPoly}')">今日</button>
+      <button type="button" class="rp-cal-nav-btn" onclick="shiftRpRecordCalMonth_('${jsScope}', 1, '${jsPoly}')" title="次の月">▶</button>
+    </div>
+  `;
+
+  calHtml += `<div class="rp-cal-grid${scopeKey === 'photo' ? ' is-photo-mode' : ''}">`;
+  weekdays.forEach((wd, wi) => {
+    calHtml += `<div class="rp-cal-weekday${wi === 0 ? ' is-sun' : (wi === 6 ? ' is-sat' : '')}">${wd}</div>`;
+  });
+
+  for (let i = 0; i < totalCells; i++) {
+    const cellDt = new Date(startUtc + i * 86400000);
+    const cy = cellDt.getUTCFullYear();
+    const cm = cellDt.getUTCMonth() + 1;
+    const cd = cellDt.getUTCDate();
+    const dow = cellDt.getUTCDay();
+    const cellYmd = `${String(cy).padStart(4, '0')}-${String(cm).padStart(2, '0')}-${String(cd).padStart(2, '0')}`;
+    const isOther = (cy !== year || cm !== month);
+    const isToday = (cellYmd === todayYmd);
+    const isSelected = (st.selectedDate === cellYmd);
+    const dayItems = byDate[cellYmd] || [];
+    const hasRecs = dayItems.length > 0;
+
+    const dayCls = [
+      'rp-cal-day',
+      isOther ? 'is-other' : '',
+      isToday ? 'is-today' : '',
+      isSelected ? 'is-selected' : '',
+      hasRecs ? 'is-has-records' : ''
+    ].filter(Boolean).join(' ');
+
+    const numCls = [
+      'rp-cal-day-num',
+      dow === 0 ? 'is-sun' : (dow === 6 ? 'is-sat' : '')
+    ].filter(Boolean).join(' ');
+
+    let topBadgeHtml = '';
+    let cellBodyHtml = '';
+
+    if (hasRecs) {
+      if (scopeKey === 'photo') {
+        const info = getRpCalCellPhotoInfo_(dayItems, scopeKey, selectMode, selectedKeyIdxMap);
+        if (selectMode && info.aiSelectedCount > 0) {
+          topBadgeHtml = `<span class="rp-cal-day-cnt is-ai-sel">✓${info.aiSelectedCount}</span>`;
+        } else {
+          topBadgeHtml = `<span class="rp-cal-day-cnt">${dayItems.length}</span>`;
+        }
+        if (info.thumbUrl) {
+          const badgeBits = [];
+          if (info.totalPhotos > 1) badgeBits.push(`${info.totalPhotos}枚`);
+          if (info.hasAnalysis) badgeBits.push('🤖');
+          const overlayText = badgeBits.join(' ');
+          cellBodyHtml = `
+            <div class="rp-cal-thumb-wrap">
+              <img src="${escapeHtmlFieldPhoto_(info.thumbUrl)}" loading="lazy" onerror="this.src='icon.png'">
+              ${overlayText ? `<span class="rp-cal-thumb-cnt">${escapeHtmlFieldPhoto_(overlayText)}</span>` : ''}
+            </div>
+          `;
+        } else if (info.hasAnalysis) {
+          cellBodyHtml = `<div class="rp-cal-chip" style="background:#5E35B1;">🤖 AI</div>`;
+        }
+      } else if (scopeKey === 'growth') {
+        const info = getRpCalCellPhotoInfo_(dayItems, scopeKey, false, null);
+        topBadgeHtml = `<span class="rp-cal-day-cnt">${dayItems.length}</span>`;
+        if (info.thumbUrl) {
+          const firstData = (dayItems[0] && dayItems[0].data) || {};
+          const lbl = String(firstData.crop || firstData.fieldStatus || '生育').trim();
+          cellBodyHtml = `
+            <div class="rp-cal-thumb-wrap rp-cal-thumb-wrap--sm">
+              <img src="${escapeHtmlFieldPhoto_(info.thumbUrl)}" loading="lazy" onerror="this.src='icon.png'">
+              ${info.totalPhotos > 1 ? `<span class="rp-cal-thumb-cnt">${info.totalPhotos}</span>` : ''}
+            </div>
+            <div class="rp-cal-chip" style="background:#2E7D32;">${escapeHtmlFieldPhoto_(lbl)}</div>
+          `;
+        } else {
+          const shown = dayItems.slice(0, 2);
+          cellBodyHtml = shown.map(it => {
+            const d = (it && it.data) || {};
+            const lbl = String(d.crop || d.fieldStatus || '生育').trim();
+            return `<div class="rp-cal-chip" style="background:#2E7D32;">${escapeHtmlFieldPhoto_(lbl)}</div>`;
+          }).join('');
+          if (dayItems.length > 2) {
+            cellBodyHtml += `<div class="rp-cal-more">+${dayItems.length - 2}件</div>`;
+          }
+        }
+      } else {
+        // work / all
+        topBadgeHtml = `<span class="rp-cal-day-cnt">${dayItems.length}</span>`;
+        const shown = dayItems.slice(0, 2);
+        cellBodyHtml = shown.map(it => {
+          const d = (it && it.data) || {};
+          const isWork = (it && it.type === 'work') || !!d.workName;
+          let bg = '#2E7D32';
+          let textColor = '#fff';
+          let lbl = String(d.crop || d.fieldStatus || '生育').trim();
+          if (isWork) {
+            const wName = String(d.workName || '作業').trim();
+            lbl = wName;
+            bg = (typeof window.getWorkNameColor === 'function')
+              ? window.getWorkNameColor(wName)
+              : '#E65100';
+            if (typeof window.isLightHexColor_ === 'function' && window.isLightHexColor_(bg)) {
+              textColor = '#222';
+            }
+          }
+          return `<div class="rp-cal-chip" style="background:${escapeHtmlFieldPhoto_(bg)};color:${textColor};">${escapeHtmlFieldPhoto_(lbl)}</div>`;
+        }).join('');
+        if (dayItems.length > 2) {
+          cellBodyHtml += `<div class="rp-cal-more">+${dayItems.length - 2}件</div>`;
+        }
+      }
+    }
+
+    const jsCellYmd = escapeJsSingleFieldPhoto_(cellYmd);
+    calHtml += `
+      <button type="button" class="${dayCls}" onclick="selectRpRecordCalDate_('${jsScope}', '${jsCellYmd}', '${jsPoly}')" title="${escapeHtmlFieldPhoto_(rpCalFormatDateJp_(cellYmd))}${hasRecs ? ` (${dayItems.length}件)` : ''}">
+        <div class="rp-cal-day-top">
+          <span class="${numCls}">${cd}</span>
+          ${topBadgeHtml}
+        </div>
+        ${cellBodyHtml}
+      </button>
+    `;
+  }
+  calHtml += `</div></div>`;
+
+  const selectedRecords = st.selectedDate ? (byDate[st.selectedDate] || []) : monthItems;
+  const detailTitle = st.selectedDate
+    ? `📅 ${rpCalFormatDateJp_(st.selectedDate)} の記録（${selectedRecords.length}件）`
+    : `📅 ${year}年${month}月の記録（${monthItems.length}件）`;
+
+  let detailHtml = `
+    <div class="rp-cal-detail-bar" style="${styleVars}">
+      <span class="rp-cal-detail-title">${escapeHtmlFieldPhoto_(detailTitle)}</span>
+      ${st.selectedDate
+      ? `<button type="button" class="rp-cal-detail-clear-btn" onclick="selectRpRecordCalDate_('${jsScope}', '', '${jsPoly}')">この月すべてを表示</button>`
+      : `<span class="rp-cal-detail-hint">日付タップで絞込</span>`}
+    </div>
+  `;
+
+  if (selectedRecords.length === 0) {
+    let jumpBtnHtml = '';
+    if (!st.selectedDate && latestYmd) {
+      const lp = latestYmd.split('-').map(Number);
+      if (lp[0] !== year || lp[1] !== month) {
+        jumpBtnHtml = `<div><button type="button" class="rp-cal-jump-btn" onclick="jumpRpRecordCalMonth_('${jsScope}', ${lp[0]}, ${lp[1]}, '', '${jsPoly}')">最新記録（${lp[0]}年${lp[1]}月）へ移動</button></div>`;
+      }
+    }
+    detailHtml += `
+      <div class="rp-cal-empty" style="${styleVars}">
+        <div>${st.selectedDate ? 'この日の記録はありません。' : `${year}年${month}月の記録はありません。`}</div>
+        ${jumpBtnHtml}
+      </div>
+    `;
+  } else {
+    detailHtml += `<div class="rp-cal-cards${cardsClass}">`;
+    selectedRecords.forEach(item => {
+      detailHtml += renderCardFn(item);
+    });
+    detailHtml += `</div>`;
+  }
+
+  if (!st.selectedDate && undated.length > 0) {
+    detailHtml += `
+      <div class="rp-cal-detail-bar" style="margin-top:12px;${styleVars}">
+        <span class="rp-cal-detail-title">📌 日付未設定の記録（${undated.length}件）</span>
+      </div>
+      <div class="rp-cal-cards${cardsClass}">
+        ${undated.map(item => renderCardFn(item)).join('')}
+      </div>
+    `;
+  }
+
+  return calHtml + detailHtml;
+}
+
 window.renderFieldPhotosTable = (id) => {
   const polyId = id || activePolyId;
   const p = loadedPolygons[polyId];
@@ -6748,6 +7218,11 @@ window.renderFieldPhotosTable = (id) => {
     `;
   }
 
+  const photoAccent = selectMode ? '#5E35B1' : '#2E7D32';
+  const photoTint = selectMode ? '#EDE7F6' : '#E8F5E9';
+  const photoViewState = getRpRecordCalState_('photo', polyId);
+  bodyHtml += buildRpRecordViewToggleHtml_('photo', polyId, { accentColor: photoAccent });
+
   const totalCount = selectMode ? allPhotoRecords.length : (allPhotoRecords.length + allAnalysisRecords.length);
   if (totalCount > 0) {
     let filterHtml = `
@@ -6780,7 +7255,135 @@ window.renderFieldPhotosTable = (id) => {
     bodyHtml += filterHtml;
   }
 
-  if (allPhotoRecords.length === 0 && allAnalysisRecords.length === 0) {
+  const renderPhotoCardHtml = (item) => {
+    if (item.data && item.data.isPhotoAnalysis) {
+      return window.buildSavedFieldPhotoAnalysisCardHtml_(item, polyId);
+    }
+
+    const isOwner = (item.author === currentUser || currentUser === 'システム');
+    const { urls, tags, photoTitle, memo } = extractFieldPhotoRecordMeta_(item);
+
+    const isWork = (item.type === 'work') || (item.data && item.data.workName);
+    const badgeType = isWork
+      ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#FFF3E0; color:#E65100; padding:2px 8px; border-radius:10px; border:1px solid #FFCC80;">🚜 作業</span>`
+      : `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#E8F5E9; color:#2E7D32; padding:2px 8px; border-radius:10px; border:1px solid #A5D6A7;">📷 写真</span>`;
+
+    const savingBadge = item._isSaving
+      ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#E3F2FD; color:#1565C0; padding:2px 8px; border-radius:10px; border:1px solid #90CAF9;">⏳ 保存中...</span>`
+      : '';
+
+    const safeRecId = escapeJsSingleFieldPhoto_(item.id || '');
+    const analyzeBtnHtml = (!selectMode && !item._isSaving)
+      ? `<button type="button" onclick="startFieldPhotoAnalysisFromRecord_('${safeRecId}', '${jsPolyId}')" style="background:#EDE7F6; color:#5E35B1; border:1px solid #B39DDB; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="この写真を選んでAI分析">🤖 分析</button>`
+      : '';
+    const editBtnHtml = (!selectMode && !item._isSaving)
+      ? `<button type="button" onclick="editFieldPhotoRecord('${safeRecId}', '${jsPolyId}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="写真・タグ・メモを編集">✏️ 編集</button>`
+      : '';
+    const deleteBtnHtml = (!selectMode && !item._isSaving && isOwner)
+      ? `<button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${jsPolyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>`
+      : '';
+
+    let cardAllSelected = false;
+    let selectCardBtnHtml = '';
+    if (selectMode && urls.length > 0) {
+      cardAllSelected = urls.every((_, idx) => selectedKeyIdxMap.has(String(item.id || '') + '::' + idx));
+      selectCardBtnHtml = `<button type="button" onclick="toggleFieldPhotoCardSelectAll_('${safeRecId}', '${jsPolyId}')" style="background:${cardAllSelected ? '#5E35B1' : '#EDE7F6'}; color:${cardAllSelected ? '#fff' : '#5E35B1'}; border:1px solid #B39DDB; border-radius:6px; padding:4px 9px; font-size:11px; font-weight:bold; cursor:pointer;">${cardAllSelected ? '✓ 投稿を解除' : '＋ 投稿を全選択'}</button>`;
+    }
+
+    let galleryHtml = '';
+    if (urls.length === 1) {
+      const u = urls[0];
+      const fullUrl = u.replace('sz=w800', 'sz=w1600');
+      const selKey = String(item.id || '') + '::0';
+      const selPos = selectedKeyIdxMap.has(selKey) ? selectedKeyIdxMap.get(selKey) : -1;
+      const isSel = selPos >= 0;
+      const clickHandler = selectMode
+        ? `toggleFieldPhotoAnalyzeSelect_('${safeRecId}', 0, '${jsPolyId}')`
+        : `openLightbox('${escapeJsSingleFieldPhoto_(fullUrl)}')`;
+      const selBadge = selectMode
+        ? `<span style="position:absolute; top:8px; left:8px; background:${isSel ? '#5E35B1' : 'rgba(255,255,255,0.9)'}; color:${isSel ? '#fff' : '#5E35B1'}; border:2px solid #5E35B1; font-size:12px; font-weight:bold; padding:3px 9px; border-radius:14px; box-shadow:0 2px 4px rgba(0,0,0,0.25);">${isSel ? `✓ ${selPos + 1}` : '○ 選択'}</span>`
+        : '';
+      galleryHtml = `
+        <div style="position:relative; width:100%; border-radius:8px; overflow:hidden; border:${isSel ? '3px solid #5E35B1' : '1px solid #e0e0e0'}; ${isSel ? 'box-shadow:0 0 0 2px rgba(94,53,177,0.25);' : ''} cursor:pointer; background:#f0f0f0;" onclick="${clickHandler}" title="${selectMode ? 'タップで分析対象に選択/解除' : 'タップで拡大'}">
+          <img src="${u}" style="width:100%; max-height:220px; object-fit:cover; display:block;" onerror="this.src='icon.png'">
+          ${selBadge}
+          ${!selectMode ? `<span style="position:absolute; bottom:8px; right:8px; background:rgba(0,0,0,0.65); color:#fff; font-size:11px; font-weight:bold; padding:4px 8px; border-radius:12px;">🔍 タップで拡大</span>` : ''}
+        </div>
+      `;
+    } else {
+      const cols = urls.length === 2 ? '1fr 1fr' : 'repeat(3, 1fr)';
+      galleryHtml = `<div style="display:grid; grid-template-columns:${cols}; gap:6px;">`;
+      urls.forEach((u, uIdx) => {
+        const fU = u.replace('sz=w800', 'sz=w1600');
+        const selKey = String(item.id || '') + '::' + uIdx;
+        const selPos = selectedKeyIdxMap.has(selKey) ? selectedKeyIdxMap.get(selKey) : -1;
+        const isSel = selPos >= 0;
+        const clickHandler = selectMode
+          ? `toggleFieldPhotoAnalyzeSelect_('${safeRecId}', ${uIdx}, '${jsPolyId}')`
+          : `openLightbox('${escapeJsSingleFieldPhoto_(fU)}')`;
+        const selBadge = selectMode
+          ? `<span style="position:absolute; top:5px; left:5px; background:${isSel ? '#5E35B1' : 'rgba(255,255,255,0.9)'}; color:${isSel ? '#fff' : '#5E35B1'}; border:2px solid #5E35B1; font-size:11px; font-weight:bold; padding:1px 7px; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.25);">${isSel ? `✓ ${selPos + 1}` : '○'}</span>`
+          : '';
+        galleryHtml += `
+          <div style="position:relative; border-radius:8px; overflow:hidden; border:${isSel ? '3px solid #5E35B1' : '1px solid #e0e0e0'}; ${isSel ? 'box-shadow:0 0 0 2px rgba(94,53,177,0.25);' : ''} cursor:pointer; aspect-ratio:1/1; background:#f0f0f0;" onclick="${clickHandler}" title="${selectMode ? `写真 ${uIdx + 1} を選択/解除` : `写真 ${uIdx + 1} (タップで拡大)`}">
+            <img src="${u}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.src='icon.png'">
+            ${selBadge}
+            ${!selectMode ? `<span style="position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,0.6); color:#fff; font-size:10px; padding:2px 5px; border-radius:8px;">🔍</span>` : ''}
+          </div>
+        `;
+      });
+      galleryHtml += `</div>`;
+    }
+
+    let tagsHtml = '';
+    if (tags.length > 0) {
+      tagsHtml = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">`;
+      tags.forEach(t => {
+        tagsHtml += `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; padding:3px 9px; border-radius:12px; ${getFieldPhotoTagStyle_(t)}">🏷️ ${escapeHtmlFieldPhoto_(t)}</span>`;
+      });
+      tagsHtml += `</div>`;
+    }
+
+    const titleHtml = photoTitle
+      ? `<div style="font-size:15px; font-weight:bold; color:#1B5E20; margin-bottom:8px; padding:6px 10px; background:#F1F8E9; border-left:4px solid #43A047; border-radius:6px; word-break:break-word; line-height:1.4;">${escapeHtmlFieldPhoto_(photoTitle)}</div>`
+      : '';
+
+    const memoHtml = memo
+      ? `<div style="margin-top:10px; background:#f8faf9; border:1px solid #e8ecea; border-radius:8px; padding:10px 12px; white-space:pre-wrap; word-break:break-word; color:#222; font-size:13px; line-height:1.5;">${escapeHtmlFieldPhoto_(memo)}</div>`
+      : '';
+
+    return `
+      <div style="background:#fff; border-radius:12px; border:1px solid ${item._isSaving ? '#90CAF9' : '#dce7df'}; padding:12px; box-shadow:0 2px 6px rgba(0,0,0,0.05);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
+          <div>
+            <div style="font-weight:bold; color:#222; font-size:13px;">📅 ${escapeHtmlFieldPhoto_(item.date || '-')} <span style="color:#666; font-weight:normal; font-size:12px;">${escapeHtmlFieldPhoto_(item.time || '')}</span></div>
+            <div style="color:#555; font-size:12px; margin-top:2px;">👤 ${escapeHtmlFieldPhoto_(item.author || '-')}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+            ${savingBadge}
+            ${badgeType}
+            ${selectCardBtnHtml}
+            ${analyzeBtnHtml}
+            ${editBtnHtml}
+            ${deleteBtnHtml}
+          </div>
+        </div>
+        ${titleHtml}
+        ${galleryHtml}
+        ${tagsHtml}
+        ${memoHtml}
+      </div>
+    `;
+  };
+
+  if (photoViewState.viewMode === 'calendar') {
+    bodyHtml += buildRpRecordCalendarSectionHtml_('photo', polyId, displayRecords, renderPhotoCardHtml, {
+      accentColor: photoAccent,
+      tintColor: photoTint,
+      selectMode,
+      selectedKeyIdxMap
+    });
+  } else if (allPhotoRecords.length === 0 && allAnalysisRecords.length === 0) {
     bodyHtml += `
       <div style="background:white; border-radius:12px; border:1px dashed #A5D6A7; padding:36px 16px; text-align:center; color:#555; box-shadow:0 2px 6px rgba(0,0,0,0.04);">
         <div style="font-size:42px; margin-bottom:10px;">📷</div>
@@ -6800,125 +7403,7 @@ window.renderFieldPhotosTable = (id) => {
   } else {
     bodyHtml += `<div style="display:flex; flex-direction:column; gap:12px;">`;
     displayRecords.forEach(item => {
-      if (item.data && item.data.isPhotoAnalysis) {
-        bodyHtml += window.buildSavedFieldPhotoAnalysisCardHtml_(item, polyId);
-        return;
-      }
-
-      const isOwner = (item.author === currentUser || currentUser === 'システム');
-      const { urls, tags, photoTitle, memo } = extractFieldPhotoRecordMeta_(item);
-
-      const isWork = (item.type === 'work') || (item.data && item.data.workName);
-      const badgeType = isWork
-        ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#FFF3E0; color:#E65100; padding:2px 8px; border-radius:10px; border:1px solid #FFCC80;">🚜 作業</span>`
-        : `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#E8F5E9; color:#2E7D32; padding:2px 8px; border-radius:10px; border:1px solid #A5D6A7;">📷 写真</span>`;
-
-      const savingBadge = item._isSaving
-        ? `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; background:#E3F2FD; color:#1565C0; padding:2px 8px; border-radius:10px; border:1px solid #90CAF9;">⏳ 保存中...</span>`
-        : '';
-
-      const safeRecId = escapeJsSingleFieldPhoto_(item.id || '');
-      const analyzeBtnHtml = (!selectMode && !item._isSaving)
-        ? `<button type="button" onclick="startFieldPhotoAnalysisFromRecord_('${safeRecId}', '${jsPolyId}')" style="background:#EDE7F6; color:#5E35B1; border:1px solid #B39DDB; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="この写真を選んでAI分析">🤖 分析</button>`
-        : '';
-      const editBtnHtml = (!selectMode && !item._isSaving)
-        ? `<button type="button" onclick="editFieldPhotoRecord('${safeRecId}', '${jsPolyId}')" style="background:#E3F2FD; color:#1565C0; border:1px solid #90CAF9; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="写真・タグ・メモを編集">✏️ 編集</button>`
-        : '';
-      const deleteBtnHtml = (!selectMode && !item._isSaving && isOwner)
-        ? `<button type="button" onclick="deleteFieldPhotoRecord('${safeRecId}', '${jsPolyId}')" style="background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2; border-radius:6px; padding:4px 8px; font-size:11px; font-weight:bold; cursor:pointer;" title="削除">🗑️ 削除</button>`
-        : '';
-
-      let cardAllSelected = false;
-      let selectCardBtnHtml = '';
-      if (selectMode && urls.length > 0) {
-        cardAllSelected = urls.every((_, idx) => selectedKeyIdxMap.has(String(item.id || '') + '::' + idx));
-        selectCardBtnHtml = `<button type="button" onclick="toggleFieldPhotoCardSelectAll_('${safeRecId}', '${jsPolyId}')" style="background:${cardAllSelected ? '#5E35B1' : '#EDE7F6'}; color:${cardAllSelected ? '#fff' : '#5E35B1'}; border:1px solid #B39DDB; border-radius:6px; padding:4px 9px; font-size:11px; font-weight:bold; cursor:pointer;">${cardAllSelected ? '✓ 投稿を解除' : '＋ 投稿を全選択'}</button>`;
-      }
-
-      let galleryHtml = '';
-      if (urls.length === 1) {
-        const u = urls[0];
-        const fullUrl = u.replace('sz=w800', 'sz=w1600');
-        const selKey = String(item.id || '') + '::0';
-        const selPos = selectedKeyIdxMap.has(selKey) ? selectedKeyIdxMap.get(selKey) : -1;
-        const isSel = selPos >= 0;
-        const clickHandler = selectMode
-          ? `toggleFieldPhotoAnalyzeSelect_('${safeRecId}', 0, '${jsPolyId}')`
-          : `openLightbox('${escapeJsSingleFieldPhoto_(fullUrl)}')`;
-        const selBadge = selectMode
-          ? `<span style="position:absolute; top:8px; left:8px; background:${isSel ? '#5E35B1' : 'rgba(255,255,255,0.9)'}; color:${isSel ? '#fff' : '#5E35B1'}; border:2px solid #5E35B1; font-size:12px; font-weight:bold; padding:3px 9px; border-radius:14px; box-shadow:0 2px 4px rgba(0,0,0,0.25);">${isSel ? `✓ ${selPos + 1}` : '○ 選択'}</span>`
-          : '';
-        galleryHtml = `
-          <div style="position:relative; width:100%; border-radius:8px; overflow:hidden; border:${isSel ? '3px solid #5E35B1' : '1px solid #e0e0e0'}; ${isSel ? 'box-shadow:0 0 0 2px rgba(94,53,177,0.25);' : ''} cursor:pointer; background:#f0f0f0;" onclick="${clickHandler}" title="${selectMode ? 'タップで分析対象に選択/解除' : 'タップで拡大'}">
-            <img src="${u}" style="width:100%; max-height:220px; object-fit:cover; display:block;" onerror="this.src='icon.png'">
-            ${selBadge}
-            ${!selectMode ? `<span style="position:absolute; bottom:8px; right:8px; background:rgba(0,0,0,0.65); color:#fff; font-size:11px; font-weight:bold; padding:4px 8px; border-radius:12px;">🔍 タップで拡大</span>` : ''}
-          </div>
-        `;
-      } else {
-        const cols = urls.length === 2 ? '1fr 1fr' : 'repeat(3, 1fr)';
-        galleryHtml = `<div style="display:grid; grid-template-columns:${cols}; gap:6px;">`;
-        urls.forEach((u, uIdx) => {
-          const fU = u.replace('sz=w800', 'sz=w1600');
-          const selKey = String(item.id || '') + '::' + uIdx;
-          const selPos = selectedKeyIdxMap.has(selKey) ? selectedKeyIdxMap.get(selKey) : -1;
-          const isSel = selPos >= 0;
-          const clickHandler = selectMode
-            ? `toggleFieldPhotoAnalyzeSelect_('${safeRecId}', ${uIdx}, '${jsPolyId}')`
-            : `openLightbox('${escapeJsSingleFieldPhoto_(fU)}')`;
-          const selBadge = selectMode
-            ? `<span style="position:absolute; top:5px; left:5px; background:${isSel ? '#5E35B1' : 'rgba(255,255,255,0.9)'}; color:${isSel ? '#fff' : '#5E35B1'}; border:2px solid #5E35B1; font-size:11px; font-weight:bold; padding:1px 7px; border-radius:12px; box-shadow:0 1px 3px rgba(0,0,0,0.25);">${isSel ? `✓ ${selPos + 1}` : '○'}</span>`
-            : '';
-          galleryHtml += `
-            <div style="position:relative; border-radius:8px; overflow:hidden; border:${isSel ? '3px solid #5E35B1' : '1px solid #e0e0e0'}; ${isSel ? 'box-shadow:0 0 0 2px rgba(94,53,177,0.25);' : ''} cursor:pointer; aspect-ratio:1/1; background:#f0f0f0;" onclick="${clickHandler}" title="${selectMode ? `写真 ${uIdx + 1} を選択/解除` : `写真 ${uIdx + 1} (タップで拡大)`}">
-              <img src="${u}" style="width:100%; height:100%; object-fit:cover; display:block;" onerror="this.src='icon.png'">
-              ${selBadge}
-              ${!selectMode ? `<span style="position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,0.6); color:#fff; font-size:10px; padding:2px 5px; border-radius:8px;">🔍</span>` : ''}
-            </div>
-          `;
-        });
-        galleryHtml += `</div>`;
-      }
-
-      let tagsHtml = '';
-      if (tags.length > 0) {
-        tagsHtml = `<div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;">`;
-        tags.forEach(t => {
-          tagsHtml += `<span style="display:inline-flex; align-items:center; font-size:11px; font-weight:bold; padding:3px 9px; border-radius:12px; ${getFieldPhotoTagStyle_(t)}">🏷️ ${escapeHtmlFieldPhoto_(t)}</span>`;
-        });
-        tagsHtml += `</div>`;
-      }
-
-      const titleHtml = photoTitle
-        ? `<div style="font-size:15px; font-weight:bold; color:#1B5E20; margin-bottom:8px; padding:6px 10px; background:#F1F8E9; border-left:4px solid #43A047; border-radius:6px; word-break:break-word; line-height:1.4;">${escapeHtmlFieldPhoto_(photoTitle)}</div>`
-        : '';
-
-      const memoHtml = memo
-        ? `<div style="margin-top:10px; background:#f8faf9; border:1px solid #e8ecea; border-radius:8px; padding:10px 12px; white-space:pre-wrap; word-break:break-word; color:#222; font-size:13px; line-height:1.5;">${escapeHtmlFieldPhoto_(memo)}</div>`
-        : '';
-
-      bodyHtml += `
-        <div style="background:#fff; border-radius:12px; border:1px solid ${item._isSaving ? '#90CAF9' : '#dce7df'}; padding:12px; box-shadow:0 2px 6px rgba(0,0,0,0.05);">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:10px;">
-            <div>
-              <div style="font-weight:bold; color:#222; font-size:13px;">📅 ${escapeHtmlFieldPhoto_(item.date || '-')} <span style="color:#666; font-weight:normal; font-size:12px;">${escapeHtmlFieldPhoto_(item.time || '')}</span></div>
-              <div style="color:#555; font-size:12px; margin-top:2px;">👤 ${escapeHtmlFieldPhoto_(item.author || '-')}</div>
-            </div>
-            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
-              ${savingBadge}
-              ${badgeType}
-              ${selectCardBtnHtml}
-              ${analyzeBtnHtml}
-              ${editBtnHtml}
-              ${deleteBtnHtml}
-            </div>
-          </div>
-          ${titleHtml}
-          ${galleryHtml}
-          ${tagsHtml}
-          ${memoHtml}
-        </div>
-      `;
+      bodyHtml += renderPhotoCardHtml(item);
     });
     bodyHtml += `</div>`;
   }
@@ -8222,157 +8707,172 @@ window.renderHistoryList = () => {
   currentRecordType = currentFilterType;
   let formTitle = p.isMarker ? (currentRecordType === 'work' ? "🚜 看板 作業記録" : "📷 看板 現地写真") : (currentRecordType === 'work' ? "🚜 作業記録履歴" : "🌱 圃場 生育記録");
   document.getElementById('rightPanelTitle').innerText = `${p.name} - ${formTitle}`;
-  let h = '';
 
-  if (!p.photos || p.photos.length === 0) {
-    h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
-  } else {
-    const filtered = p.photos.filter(item => {
-      if (item && item.data && item.data.isPhotoAnalysis) return false;
-      const isWork = (item.type === 'work') || (item.data && item.data.workName);
-      if (currentRecordType === 'work') return isWork;
-      return !isWork;
-    });
+  const scopeKey = (currentRecordType === 'work') ? 'work' : 'growth';
+  const accentColor = (scopeKey === 'work') ? '#E65100' : '#2E7D32';
+  const tintColor = (scopeKey === 'work') ? '#FFF3E0' : '#E8F5E9';
+  const viewState = getRpRecordCalState_(scopeKey, activePolyId);
 
-    if (filtered.length === 0) {
-      h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
-    } else {
-      filtered.sort((a, b) => {
-        const da = new Date((a.date || '').replace(/\//g, '-') + 'T' + (a.time || '00:00') + ':00');
-        const db = new Date((b.date || '').replace(/\//g, '-') + 'T' + (b.time || '00:00') + ':00');
-        return db - da;
-      });
+  const rawPhotos = Array.isArray(p.photos) ? p.photos : [];
+  const filtered = rawPhotos.filter(item => {
+    if (!item) return false;
+    if (item.data && item.data.isPhotoAnalysis) return false;
+    const isWork = (item.type === 'work') || (item.data && item.data.workName);
+    if (currentRecordType === 'work') return isWork;
+    return !isWork;
+  });
 
-      filtered.forEach(item => {
-        const isOwner = item.author === currentUser || currentUser === 'システム';
-        const isWorkItem = item.type === 'work' && item.data;
-        const syncBadge = (typeof window.renderRecordSyncStatusBadgeHtml_ === 'function')
-          ? window.renderRecordSyncStatusBadgeHtml_(item) : '';
-        const syncBorder = item._syncFailed
-          ? ' border:2px dashed #ef5350;'
-          : (item._pendingSync ? ' border:2px dashed #64b5f6;' : '');
-        const workHex = isWorkItem && typeof window.getWorkNameColor === 'function'
-          ? window.getWorkNameColor(item.data.workName || '')
-          : '#4CAF50';
+  filtered.sort((a, b) => {
+    const ta = new Date(String(a.date || '').replace(/\//g, '-') + 'T' + String(a.time || '00:00') + ':00').getTime();
+    const tb = new Date(String(b.date || '').replace(/\//g, '-') + 'T' + String(b.time || '00:00') + ':00').getTime();
+    return (isNaN(tb) ? 0 : tb) - (isNaN(ta) ? 0 : ta);
+  });
 
-        h += `<div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 1px 4px rgba(0,0,0,0.1); position:relative;${isWorkItem ? ` border-left:5px solid ${workHex};` : ''}${syncBorder}">`;
-        h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px;">
-                      <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''} / 👤 ${item.author}${syncBadge}</span>
-                      ${isOwner ? `<div><span onclick="deleteRecord('${item.id}')" style="cursor:pointer;color:#F44336;font-size:12px;margin-right:10px;">🗑️ 削除</span><span onclick="editRecord('${item.id}', '${item.type || 'growth'}')" style="cursor:pointer;color:#2196F3;font-size:12px;">✏️ 編集</span></div>` : ''}
-                    </div>`;
+  const renderHistoryCardHtml = (item) => {
+    const isOwner = item.author === currentUser || currentUser === 'システム';
+    const isWorkItem = item.type === 'work' && item.data;
+    const syncBadge = (typeof window.renderRecordSyncStatusBadgeHtml_ === 'function')
+      ? window.renderRecordSyncStatusBadgeHtml_(item) : '';
+    const syncBorder = item._syncFailed
+      ? ' border:2px dashed #ef5350;'
+      : (item._pendingSync ? ' border:2px dashed #64b5f6;' : '');
+    const workHex = isWorkItem && typeof window.getWorkNameColor === 'function'
+      ? window.getWorkNameColor(item.data.workName || '')
+      : '#4CAF50';
 
-        if (item.data && item.data.multiFieldNames && item.data.multiFieldNames.includes(',')) {
-          h += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">🔗一括: ${item.data.multiFieldNames}</div>`;
-        }
+    let ch = `<div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 1px 4px rgba(0,0,0,0.1); position:relative;${isWorkItem ? ` border-left:5px solid ${workHex};` : ''}${syncBorder}">`;
+    ch += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;border-bottom:1px solid #eee;padding-bottom:5px;">
+                  <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''} / 👤 ${item.author}${syncBadge}</span>
+                  ${isOwner ? `<div><span onclick="deleteRecord('${item.id}')" style="cursor:pointer;color:#F44336;font-size:12px;margin-right:10px;">🗑️ 削除</span><span onclick="editRecord('${item.id}', '${item.type || 'growth'}')" style="cursor:pointer;color:#2196F3;font-size:12px;">✏️ 編集</span></div>` : ''}
+                </div>`;
 
-        if (isWorkItem) {
-          const workLabel = p.isMarker ? "作業登録" : "作業記録";
-          const progressBadge = (typeof window.renderProgressStatusBadgeHtml === 'function')
-            ? window.renderProgressStatusBadgeHtml({ ...item, polyId: activePolyId }, { showDelegate: true })
-            : `<span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus || '-'}</span>`;
-          const catBadge = (item.data.category && typeof window.buildWorkMetaBadgeHtml === 'function')
-            ? window.buildWorkMetaBadgeHtml('category', item.data.category, { prefix: '📁 ' })
-            : (item.data.category ? `<span style="background:#e8f0fe;color:#1565c0;font-size:11px;padding:2px 8px;border-radius:10px;">📁 ${item.data.category}</span>` : '');
-          const cropBadges = String(item.data.crop || '').split(/[,、]/).map(s => s.trim()).filter(Boolean)
-            .map(c => (typeof window.buildWorkMetaBadgeHtml === 'function')
-              ? window.buildWorkMetaBadgeHtml('crop', c, { prefix: '🌱 ' })
-              : `<span style="font-size:11px;color:#555;">🌱 ${c}</span>`).join(' ');
-          if (catBadge || cropBadges) {
-            h += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">${catBadge}${cropBadges}</div>`;
-          }
-          const workBadge = (typeof window.buildWorkMetaBadgeHtml === 'function')
-            ? window.buildWorkMetaBadgeHtml('work', item.data.workName || '作業', { solid: true, fontSize: '13px', prefix: '🚜 ' })
-            : `<b>🚜 ${workLabel}: ${item.data.workName || '-'}</b>`;
-          h += `<div style="font-size:14px; margin-bottom:5px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">${workBadge} ${progressBadge}</div>`;
-          if (item.data.prepTargetWork && typeof window.isMetaTargetCategory_ === 'function'
-            && window.isMetaTargetCategory_(item.data.category || '')) {
-            h += `<div style="font-size:12px;color:#6A1B9A;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">📋 ${item.data.category || '準備'}の対象: <b>${item.data.prepTargetWork}</b>${item.data.prepTargetCategory ? '（' + item.data.prepTargetCategory + '）' : ''}</div>`;
-          }
-          if (item.data.ridgeCount || item.data.workedRidges || item.data.nextRidge) {
-            const rc = parseInt(item.data.ridgeCount, 10);
-            const ridgeInfo = (rc > 0) ? `${rc}本` : (item.data.workedRidges || '未設定');
-            h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝立て: ${ridgeInfo}${item.data.nextRidge ? ' / 次回=' + item.data.nextRidge : ''}</div>`;
-          }
-          if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
-            const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
-            h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 吸水栓: ${irrigText}</div>`;
-          }
-          if (item.data.drainageValves && Array.isArray(item.data.drainageValves) && item.data.drainageValves.length) {
-            const drainText = item.data.drainageValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
-            h += `<div style="font-size:12px;color:#00838F;margin-bottom:5px;background:#e0f7fa;padding:4px;border-radius:4px;border:1px solid #4dd0e1;">🕳️ 排水溝: ${drainText}</div>`;
-          }
-          if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
-            const pumpText = item.data.installedPumps.map(pmp => pmp.name || pmp.id).join('、');
-            h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
-          }
-          if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
-          if (item.data.registeredWork && typeof window.formatRegisteredWorkBadgeHtml_ === 'function') {
-            h += window.formatRegisteredWorkBadgeHtml_(item.data.registeredWork);
-          }
-          if (Array.isArray(item.data.workMembers) && item.data.workMembers.length) {
-            const memEsc = window.escapeWorkUiHtml_ || (s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'));
-            const memNames = item.data.workMembers.map(m => m && (m.name || m.id)).filter(Boolean).join('、');
-            if (memNames) {
-              const sharedNote = item.data.sharedFromAuthor ? ` <span style="font-size:10px;color:#1565C0;">（${memEsc(item.data.sharedFromAuthor)}さんの記録から同時登録）</span>` : '';
-              h += `<div style="font-size:12px;color:#0D47A1;margin-bottom:5px;background:#E3F2FD;padding:4px 8px;border-radius:4px;border:1px solid #90CAF9;">👥 メンバー: ${memEsc(memNames)}${sharedNote}</div>`;
-            }
-          }
-          if (Array.isArray(item.data.concurrentWorks) && item.data.concurrentWorks.length) {
-            const cwText = item.data.concurrentWorks.map(cw =>
-              typeof window.formatConcurrentWorkSummary_ === 'function'
-                ? window.formatConcurrentWorkSummary_(cw)
-                : (cw.workName || '')
-            ).filter(Boolean).join(' ／ ');
-            if (cwText) h += `<div style="font-size:12px;color:#5E35B1;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">🔀 同時作業: ${cwText}</div>`;
-          }
-          if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
-          if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime || '--:--'} 〜 ${item.data.endTime || '--:--'} ➔ 計: <b>${item.data.totalTime || '--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
-          if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
-          if (typeof window.formatUsedItemsHistoryHtml_ === 'function') {
-            h += window.formatUsedItemsHistoryHtml_(item.data);
-          } else if (item.data.usedMaterials) {
-            h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
-          }
-          if (item.data.maintenanceTool) {
-            const mtList = Array.isArray(item.data.maintenanceTargets) ? item.data.maintenanceTargets : [];
-            const perMachine = mtList.some(t => t && (t.symptom || t.content || t.parts));
-            const body = perMachine
-              ? mtList.map(t => {
-                const bits = [
-                  t.symptom ? `症状:${t.symptom}` : '',
-                  t.content ? `内容:${t.content}` : '',
-                  t.parts ? `部品:${t.parts}` : ''
-                ].filter(Boolean).join(' / ') || '（詳細なし）';
-                return `・${t.name || t.id || '対象'}: ${bits}`;
-              }).join('<br>')
-              : `症状: ${item.data.maintenanceSymptom || '-'}<br>内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}`;
-            h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
-                            <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
-                            ${body}
-                          </div>`;
-          }
-        } else if (item.type !== 'work' && item.data) {
-          h += `<div style="font-size:14px; margin-bottom:5px;"><b>🌱 生育記録: ${item.data.crop || '-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus || '-'}</span></div>`;
-          let tags = [];
-          if (item.data.mowing) tags.push('草刈り'); if (item.data.weeding) tags.push('草抜き'); if (item.data.drainage) tags.push('排水');
-          if (item.data.bug) tags.push('虫食有'); if (item.data.disease) tags.push('病気有'); if (item.data.flower) tags.push('花芽有');
-          if (tags.length) h += `<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:4px;">${tags.map(t => `<span style="background:#eee;color:#333;font-size:11px;padding:2px 6px;border-radius:10px;">${t}</span>`).join('')}</div>`;
-          if (item.data.notes) h += `<div style="font-size:12px; color:#444; background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:5px; white-space:pre-wrap;">${item.data.notes}</div>`;
-        }
-
-        if (item.urls && item.urls.length > 0) {
-          h += `<div style="display:flex; gap:10px; overflow-x:auto; margin-top:10px;">`;
-          item.urls.forEach(u => {
-            h += `<a href="${u.replace('sz=w800', 'sz=w1600')}" target="_blank" style="flex-shrink:0;"><img src="${u}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ddd;"></a>`;
-          });
-          h += `</div>`;
-        } else if (item.url) {
-          h += `<div style="margin-top:10px;"><a href="${item.url.replace('sz=w800', 'sz=w1600')}" target="_blank"><img src="${item.url}" style="max-width:100%; height:auto; border-radius:4px; border:1px solid #ddd;"></a></div>`;
-        }
-        h += `</div>`;
-      });
+    if (item.data && item.data.multiFieldNames && item.data.multiFieldNames.includes(',')) {
+      ch += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">🔗一括: ${item.data.multiFieldNames}</div>`;
     }
+
+    if (isWorkItem) {
+      const workLabel = p.isMarker ? "作業登録" : "作業記録";
+      const progressBadge = (typeof window.renderProgressStatusBadgeHtml === 'function')
+        ? window.renderProgressStatusBadgeHtml({ ...item, polyId: activePolyId }, { showDelegate: true })
+        : `<span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus || '-'}</span>`;
+      const catBadge = (item.data.category && typeof window.buildWorkMetaBadgeHtml === 'function')
+        ? window.buildWorkMetaBadgeHtml('category', item.data.category, { prefix: '📁 ' })
+        : (item.data.category ? `<span style="background:#e8f0fe;color:#1565c0;font-size:11px;padding:2px 8px;border-radius:10px;">📁 ${item.data.category}</span>` : '');
+      const cropBadges = String(item.data.crop || '').split(/[,、]/).map(s => s.trim()).filter(Boolean)
+        .map(c => (typeof window.buildWorkMetaBadgeHtml === 'function')
+          ? window.buildWorkMetaBadgeHtml('crop', c, { prefix: '🌱 ' })
+          : `<span style="font-size:11px;color:#555;">🌱 ${c}</span>`).join(' ');
+      if (catBadge || cropBadges) {
+        ch += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">${catBadge}${cropBadges}</div>`;
+      }
+      const workBadge = (typeof window.buildWorkMetaBadgeHtml === 'function')
+        ? window.buildWorkMetaBadgeHtml('work', item.data.workName || '作業', { solid: true, fontSize: '13px', prefix: '🚜 ' })
+        : `<b>🚜 ${workLabel}: ${item.data.workName || '-'}</b>`;
+      ch += `<div style="font-size:14px; margin-bottom:5px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">${workBadge} ${progressBadge}</div>`;
+      if (item.data.prepTargetWork && typeof window.isMetaTargetCategory_ === 'function'
+        && window.isMetaTargetCategory_(item.data.category || '')) {
+        ch += `<div style="font-size:12px;color:#6A1B9A;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">📋 ${item.data.category || '準備'}の対象: <b>${item.data.prepTargetWork}</b>${item.data.prepTargetCategory ? '（' + item.data.prepTargetCategory + '）' : ''}</div>`;
+      }
+      if (item.data.ridgeCount || item.data.workedRidges || item.data.nextRidge) {
+        const rc = parseInt(item.data.ridgeCount, 10);
+        const ridgeInfo = (rc > 0) ? `${rc}本` : (item.data.workedRidges || '未設定');
+        ch += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝立て: ${ridgeInfo}${item.data.nextRidge ? ' / 次回=' + item.data.nextRidge : ''}</div>`;
+      }
+      if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
+        const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
+        ch += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 吸水栓: ${irrigText}</div>`;
+      }
+      if (item.data.drainageValves && Array.isArray(item.data.drainageValves) && item.data.drainageValves.length) {
+        const drainText = item.data.drainageValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
+        ch += `<div style="font-size:12px;color:#00838F;margin-bottom:5px;background:#e0f7fa;padding:4px;border-radius:4px;border:1px solid #4dd0e1;">🕳️ 排水溝: ${drainText}</div>`;
+      }
+      if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
+        const pumpText = item.data.installedPumps.map(pmp => pmp.name || pmp.id).join('、');
+        ch += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
+      }
+      if (item.data.detailedWorks) ch += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
+      if (item.data.registeredWork && typeof window.formatRegisteredWorkBadgeHtml_ === 'function') {
+        ch += window.formatRegisteredWorkBadgeHtml_(item.data.registeredWork);
+      }
+      if (Array.isArray(item.data.workMembers) && item.data.workMembers.length) {
+        const memEsc = window.escapeWorkUiHtml_ || (s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'));
+        const memNames = item.data.workMembers.map(m => m && (m.name || m.id)).filter(Boolean).join('、');
+        if (memNames) {
+          const sharedNote = item.data.sharedFromAuthor ? ` <span style="font-size:10px;color:#1565C0;">（${memEsc(item.data.sharedFromAuthor)}さんの記録から同時登録）</span>` : '';
+          ch += `<div style="font-size:12px;color:#0D47A1;margin-bottom:5px;background:#E3F2FD;padding:4px 8px;border-radius:4px;border:1px solid #90CAF9;">👥 メンバー: ${memEsc(memNames)}${sharedNote}</div>`;
+        }
+      }
+      if (Array.isArray(item.data.concurrentWorks) && item.data.concurrentWorks.length) {
+        const cwText = item.data.concurrentWorks.map(cw =>
+          typeof window.formatConcurrentWorkSummary_ === 'function'
+            ? window.formatConcurrentWorkSummary_(cw)
+            : (cw.workName || '')
+        ).filter(Boolean).join(' ／ ');
+        if (cwText) ch += `<div style="font-size:12px;color:#5E35B1;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">🔀 同時作業: ${cwText}</div>`;
+      }
+      if (item.data.workDate) ch += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
+      if (item.data.startTime) ch += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime || '--:--'} 〜 ${item.data.endTime || '--:--'} ➔ 計: <b>${item.data.totalTime || '--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
+      if (item.data.usedTools) ch += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
+      if (typeof window.formatUsedItemsHistoryHtml_ === 'function') {
+        ch += window.formatUsedItemsHistoryHtml_(item.data);
+      } else if (item.data.usedMaterials) {
+        ch += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+      }
+      if (item.data.maintenanceTool) {
+        const mtList = Array.isArray(item.data.maintenanceTargets) ? item.data.maintenanceTargets : [];
+        const perMachine = mtList.some(t => t && (t.symptom || t.content || t.parts));
+        const body = perMachine
+          ? mtList.map(t => {
+            const bits = [
+              t.symptom ? `症状:${t.symptom}` : '',
+              t.content ? `内容:${t.content}` : '',
+              t.parts ? `部品:${t.parts}` : ''
+            ].filter(Boolean).join(' / ') || '（詳細なし）';
+            return `・${t.name || t.id || '対象'}: ${bits}`;
+          }).join('<br>')
+          : `症状: ${item.data.maintenanceSymptom || '-'}<br>内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}`;
+        ch += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
+                        <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
+                        ${body}
+                      </div>`;
+      }
+    } else if (item.type !== 'work' && item.data) {
+      ch += `<div style="font-size:14px; margin-bottom:5px;"><b>🌱 生育記録: ${item.data.crop || '-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus || '-'}</span></div>`;
+      let tags = [];
+      if (item.data.mowing) tags.push('草刈り'); if (item.data.weeding) tags.push('草抜き'); if (item.data.drainage) tags.push('排水');
+      if (item.data.bug) tags.push('虫食有'); if (item.data.disease) tags.push('病気有'); if (item.data.flower) tags.push('花芽有');
+      if (tags.length) ch += `<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:4px;">${tags.map(t => `<span style="background:#eee;color:#333;font-size:11px;padding:2px 6px;border-radius:10px;">${t}</span>`).join('')}</div>`;
+      if (item.data.notes) ch += `<div style="font-size:12px; color:#444; background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:5px; white-space:pre-wrap;">${item.data.notes}</div>`;
+    }
+
+    if (item.urls && item.urls.length > 0) {
+      ch += `<div style="display:flex; gap:10px; overflow-x:auto; margin-top:10px;">`;
+      item.urls.forEach(u => {
+        ch += `<a href="${u.replace('sz=w800', 'sz=w1600')}" target="_blank" style="flex-shrink:0;"><img src="${u}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ddd;"></a>`;
+      });
+      ch += `</div>`;
+    } else if (item.url) {
+      ch += `<div style="margin-top:10px;"><a href="${item.url.replace('sz=w800', 'sz=w1600')}" target="_blank"><img src="${item.url}" style="max-width:100%; height:auto; border-radius:4px; border:1px solid #ddd;"></a></div>`;
+    }
+    ch += `</div>`;
+    return ch;
+  };
+
+  let h = buildRpRecordViewToggleHtml_(scopeKey, activePolyId, { accentColor });
+  if (viewState.viewMode === 'calendar') {
+    h += buildRpRecordCalendarSectionHtml_(scopeKey, activePolyId, filtered, renderHistoryCardHtml, {
+      accentColor,
+      tintColor,
+      cardsClass: 'rp-cal-cards--history'
+    });
+  } else if (filtered.length === 0) {
+    h += '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
+  } else {
+    filtered.forEach(item => {
+      h += renderHistoryCardHtml(item);
+    });
   }
+
   document.getElementById('rightPanelContent').innerHTML = h;
   const btnColor = currentRecordType === 'work' ? '#FF9800' : '#4CAF50';
   const btnLabel = currentRecordType === 'work' ? '🚜 作業記録を追加' : '📷 新しい記録を追加';
@@ -8382,7 +8882,6 @@ window.renderHistoryList = () => {
 
 window.openAllHistory = () => {
   document.getElementById('rightPanelTitle').innerText = "📖 全履歴一覧";
-  let h = '';
   let allRecs = [];
   for (let pid in loadedPolygons) {
     const p = loadedPolygons[pid];
@@ -8392,155 +8891,169 @@ window.openAllHistory = () => {
   }
 
   allRecs.sort((a, b) => {
-    const da = new Date(a.date.replace(/\//g, '-') + 'T' + (a.time || '00:00') + ':00');
-    const db = new Date(b.date.replace(/\//g, '-') + 'T' + (b.time || '00:00') + ':00');
-    return db - da;
+    const ta = new Date(String(a.date || '').replace(/\//g, '-') + 'T' + String(a.time || '00:00') + ':00').getTime();
+    const tb = new Date(String(b.date || '').replace(/\//g, '-') + 'T' + String(b.time || '00:00') + ':00').getTime();
+    return (isNaN(tb) ? 0 : tb) - (isNaN(ta) ? 0 : ta);
   });
 
-  if (allRecs.length === 0) {
-    h = '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
+  const renderAllHistoryCardHtml = (item) => {
+    const workName = item && item.data ? String(item.data.workName || '').trim() : '';
+    const syncBadge = (typeof window.renderRecordSyncStatusBadgeHtml_ === 'function')
+      ? window.renderRecordSyncStatusBadgeHtml_(item) : '';
+    const syncBorder = item._syncFailed
+      ? ' border:2px dashed #ef5350;'
+      : (item._pendingSync ? ' border:2px dashed #64b5f6;' : '');
+    const workMaster = workName && Array.isArray(pdlWorkMaster)
+      ? pdlWorkMaster.find(w => String((w && w.name) || '').trim() === workName)
+      : null;
+    const workCategory = String((item.data && item.data.category) || (workMaster && workMaster.category) || '').trim();
+    const hideMarkerTitle = !!(item.type === 'work' && item.isMarker && workCategory && typeof window.isFieldCategory === 'function' && !window.isFieldCategory(workCategory));
+    const workHex = (item.type === 'work' && typeof window.getWorkNameColor === 'function')
+      ? window.getWorkNameColor(workName)
+      : '';
+
+    let ch = `<div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 1px 4px rgba(0,0,0,0.1); position:relative;${workHex ? ` border-left:5px solid ${workHex};` : ''}${syncBorder}">`;
+
+    if (!hideMarkerTitle) {
+      ch += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid #eee;padding-bottom:5px;">
+                      <span style="font-size:13px;font-weight:bold;color:#1a73e8;cursor:pointer;" onclick="focusAndOpen('${item.polyId}')">${item.isMarker ? '🪧' : '🌿'} ${item.polyName}</span>
+                      <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}${syncBadge}</span>
+                    </div>`;
+    } else {
+      ch += `<div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;">
+                      <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}${syncBadge}</span>
+                    </div>`;
+    }
+    ch += `<div style="font-size:11px;color:#888;margin-bottom:10px;text-align:right;">👤 ${item.author}</div>`;
+
+    if (item.data && item.data.multiFieldNames && item.data.multiFieldNames.includes(',')) {
+      ch += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">🔗一括: ${item.data.multiFieldNames}</div>`;
+    }
+
+    if (item.type === 'work' && item.data) {
+      const workLabel = item.isMarker ? "作業登録" : "作業記録";
+      const catName = String(item.data.category || workCategory || '').trim();
+      const categoryBadge = catName && typeof window.buildWorkMetaBadgeHtml === 'function'
+        ? window.buildWorkMetaBadgeHtml('category', catName, { prefix: '📁 ' })
+        : (catName ? `<span style="background:#e8f0fe;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${catName}</span>` : '');
+      const progressBadge = (typeof window.renderProgressStatusBadgeHtml === 'function')
+        ? window.renderProgressStatusBadgeHtml(item, { showDelegate: true })
+        : `<span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus || '-'}</span>`;
+      const workBadge = (typeof window.buildWorkMetaBadgeHtml === 'function')
+        ? window.buildWorkMetaBadgeHtml('work', item.data.workName || '作業', { solid: true, fontSize: '13px', prefix: '🚜 ' })
+        : `<b>🚜 ${workLabel}: ${item.data.workName || '-'}</b>`;
+      const cropBadges = String(item.data.crop || '').split(/[,、]/).map(s => s.trim()).filter(Boolean)
+        .map(c => (typeof window.buildWorkMetaBadgeHtml === 'function')
+          ? window.buildWorkMetaBadgeHtml('crop', c, { prefix: '🌱 ' })
+          : `<span style="font-size:11px;color:#555;">🌱 ${c}</span>`).join(' ');
+      ch += `<div style="font-size:14px; margin-bottom:5px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">${workBadge}${categoryBadge} ${progressBadge}</div>`;
+      if (cropBadges) ch += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:5px;">${cropBadges}</div>`;
+      if (item.data.prepTargetWork && typeof window.isMetaTargetCategory_ === 'function'
+        && window.isMetaTargetCategory_(item.data.category || catName || '')) {
+        ch += `<div style="font-size:12px;color:#6A1B9A;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">📋 ${item.data.category || catName || '準備'}の対象: <b>${item.data.prepTargetWork}</b>${item.data.prepTargetCategory ? '（' + item.data.prepTargetCategory + '）' : ''}</div>`;
+      }
+      if (item.data.ridgeCount || item.data.workedRidges || item.data.nextRidge) {
+        const rc = parseInt(item.data.ridgeCount, 10);
+        const ridgeInfo = (rc > 0) ? `${rc}本` : (item.data.workedRidges || '未設定');
+        ch += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝立て: ${ridgeInfo}${item.data.nextRidge ? ' / 次回=' + item.data.nextRidge : ''}</div>`;
+      }
+      if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
+        const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
+        ch += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 吸水栓: ${irrigText}</div>`;
+      }
+      if (item.data.drainageValves && Array.isArray(item.data.drainageValves) && item.data.drainageValves.length) {
+        const drainText = item.data.drainageValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
+        ch += `<div style="font-size:12px;color:#00838F;margin-bottom:5px;background:#e0f7fa;padding:4px;border-radius:4px;border:1px solid #4dd0e1;">🕳️ 排水溝: ${drainText}</div>`;
+      }
+      if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
+        const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('、');
+        ch += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
+      }
+      if (item.data.detailedWorks) ch += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
+      if (item.data.registeredWork && typeof window.formatRegisteredWorkBadgeHtml_ === 'function') {
+        ch += window.formatRegisteredWorkBadgeHtml_(item.data.registeredWork);
+      }
+      if (Array.isArray(item.data.workMembers) && item.data.workMembers.length) {
+        const memEsc = window.escapeWorkUiHtml_ || (s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'));
+        const memNames = item.data.workMembers.map(m => m && (m.name || m.id)).filter(Boolean).join('、');
+        if (memNames) {
+          const sharedNote = item.data.sharedFromAuthor ? ` <span style="font-size:10px;color:#1565C0;">（${memEsc(item.data.sharedFromAuthor)}さんの記録から同時登録）</span>` : '';
+          ch += `<div style="font-size:12px;color:#0D47A1;margin-bottom:5px;background:#E3F2FD;padding:4px 8px;border-radius:4px;border:1px solid #90CAF9;">👥 メンバー: ${memEsc(memNames)}${sharedNote}</div>`;
+        }
+      }
+      if (Array.isArray(item.data.concurrentWorks) && item.data.concurrentWorks.length) {
+        const cwText = item.data.concurrentWorks.map(cw =>
+          typeof window.formatConcurrentWorkSummary_ === 'function'
+            ? window.formatConcurrentWorkSummary_(cw)
+            : (cw.workName || '')
+        ).filter(Boolean).join(' ／ ');
+        if (cwText) ch += `<div style="font-size:12px;color:#5E35B1;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">🔀 同時作業: ${cwText}</div>`;
+      }
+
+      if (item.data.workDate) ch += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
+      if (item.data.startTime) ch += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime || '--:--'} 〜 ${item.data.endTime || '--:--'} ➔ 計: <b>${item.data.totalTime || '--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
+      if (item.data.usedTools) ch += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
+      if (typeof window.formatUsedItemsHistoryHtml_ === 'function') {
+        ch += window.formatUsedItemsHistoryHtml_(item.data);
+      } else if (item.data.usedMaterials) {
+        ch += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
+      }
+      if (item.data.maintenanceTool) {
+        const mtList = Array.isArray(item.data.maintenanceTargets) ? item.data.maintenanceTargets : [];
+        const perMachine = mtList.some(t => t && (t.symptom || t.content || t.parts));
+        const body = perMachine
+          ? mtList.map(t => {
+            const bits = [
+              t.symptom ? `症状:${t.symptom}` : '',
+              t.content ? `内容:${t.content}` : '',
+              t.parts ? `部品:${t.parts}` : ''
+            ].filter(Boolean).join(' / ') || '（詳細なし）';
+            return `・${t.name || t.id || '対象'}: ${bits}`;
+          }).join('<br>')
+          : `内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}`;
+        ch += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
+                          <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
+                          ${body}
+                        </div>`;
+      }
+    } else if (item.type !== 'work' && item.data) {
+      ch += `<div style="font-size:14px; margin-bottom:5px;"><b>🌱 生育記録: ${item.data.crop || '-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus || '-'}</span></div>`;
+      let tags = [];
+      if (item.data.mowing) tags.push('草刈り'); if (item.data.weeding) tags.push('草抜き'); if (item.data.drainage) tags.push('排水');
+      if (item.data.bug) tags.push('虫食有'); if (item.data.disease) tags.push('病気有'); if (item.data.flower) tags.push('花芽有');
+      if (tags.length) ch += `<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:4px;">${tags.map(t => `<span style="background:#eee;color:#333;font-size:11px;padding:2px 6px;border-radius:10px;">${t}</span>`).join('')}</div>`;
+      if (item.data.notes) ch += `<div style="font-size:12px; color:#444; background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:5px; white-space:pre-wrap;">${item.data.notes}</div>`;
+    }
+
+    if (item.urls && item.urls.length > 0) {
+      ch += `<div style="display:flex; gap:10px; overflow-x:auto; margin-top:10px;">`;
+      item.urls.forEach(u => {
+        ch += `<a href="${u.replace('sz=w800', 'sz=w1600')}" target="_blank" style="flex-shrink:0;"><img src="${u}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ddd;"></a>`;
+      });
+      ch += `</div>`;
+    } else if (item.url) {
+      ch += `<div style="margin-top:10px;"><a href="${item.url.replace('sz=w800', 'sz=w1600')}" target="_blank"><img src="${item.url}" style="max-width:100%; height:auto; border-radius:4px; border:1px solid #ddd;"></a></div>`;
+    }
+    ch += `</div>`;
+    return ch;
+  };
+
+  const allViewState = getRpRecordCalState_('all', '__all__');
+  let h = buildRpRecordViewToggleHtml_('all', '__all__', { accentColor: '#1565C0' });
+  if (allViewState.viewMode === 'calendar') {
+    h += buildRpRecordCalendarSectionHtml_('all', '__all__', allRecs, renderAllHistoryCardHtml, {
+      accentColor: '#1565C0',
+      tintColor: '#E3F2FD',
+      cardsClass: 'rp-cal-cards--history'
+    });
+  } else if (allRecs.length === 0) {
+    h += '<div style="color:#666;text-align:center;padding:20px;">まだ記録がありません。</div>';
   } else {
     allRecs.forEach(item => {
-      const workName = item && item.data ? String(item.data.workName || '').trim() : '';
-      const syncBadge = (typeof window.renderRecordSyncStatusBadgeHtml_ === 'function')
-        ? window.renderRecordSyncStatusBadgeHtml_(item) : '';
-      const syncBorder = item._syncFailed
-        ? ' border:2px dashed #ef5350;'
-        : (item._pendingSync ? ' border:2px dashed #64b5f6;' : '');
-      const workMaster = workName && Array.isArray(pdlWorkMaster)
-        ? pdlWorkMaster.find(w => String((w && w.name) || '').trim() === workName)
-        : null;
-      const workCategory = String((item.data && item.data.category) || (workMaster && workMaster.category) || '').trim();
-      const hideMarkerTitle = !!(item.type === 'work' && item.isMarker && workCategory && typeof window.isFieldCategory === 'function' && !window.isFieldCategory(workCategory));
-      const workHex = (item.type === 'work' && typeof window.getWorkNameColor === 'function')
-        ? window.getWorkNameColor(workName)
-        : '';
-
-      h += `<div style="background:white; padding:15px; border-radius:8px; margin-bottom:15px; box-shadow:0 1px 4px rgba(0,0,0,0.1); position:relative;${workHex ? ` border-left:5px solid ${workHex};` : ''}${syncBorder}">`;
-
-      if (!hideMarkerTitle) {
-        h += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;border-bottom:1px solid #eee;padding-bottom:5px;">
-                        <span style="font-size:13px;font-weight:bold;color:#1a73e8;cursor:pointer;" onclick="focusAndOpen('${item.polyId}')">${item.isMarker ? '🪧' : '🌿'} ${item.polyName}</span>
-                        <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}${syncBadge}</span>
-                      </div>`;
-      } else {
-        h += `<div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:5px;">
-                        <span style="font-size:11px;color:#888;">📅 ${item.date} ${item.time || ''}${syncBadge}</span>
-                      </div>`;
-      }
-      h += `<div style="font-size:11px;color:#888;margin-bottom:10px;text-align:right;">👤 ${item.author}</div>`;
-
-      if (item.data && item.data.multiFieldNames && item.data.multiFieldNames.includes(',')) {
-        h += `<div style="font-size:11px; color:#2196F3; margin-bottom:5px; background:#e3f2fd; padding:4px; border-radius:4px; display:inline-block;">🔗一括: ${item.data.multiFieldNames}</div>`;
-      }
-
-      if (item.type === 'work' && item.data) {
-        const workLabel = item.isMarker ? "作業登録" : "作業記録";
-        const catName = String(item.data.category || workCategory || '').trim();
-        const categoryBadge = catName && typeof window.buildWorkMetaBadgeHtml === 'function'
-          ? window.buildWorkMetaBadgeHtml('category', catName, { prefix: '📁 ' })
-          : (catName ? `<span style="background:#e8f0fe;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${catName}</span>` : '');
-        const progressBadge = (typeof window.renderProgressStatusBadgeHtml === 'function')
-          ? window.renderProgressStatusBadgeHtml(item, { showDelegate: true })
-          : `<span style="background:#fff3e0;padding:2px 6px;border-radius:4px;font-size:12px;color:#f57c00;margin-left:5px;">${item.data.progressStatus || '-'}</span>`;
-        const workBadge = (typeof window.buildWorkMetaBadgeHtml === 'function')
-          ? window.buildWorkMetaBadgeHtml('work', item.data.workName || '作業', { solid: true, fontSize: '13px', prefix: '🚜 ' })
-          : `<b>🚜 ${workLabel}: ${item.data.workName || '-'}</b>`;
-        const cropBadges = String(item.data.crop || '').split(/[,、]/).map(s => s.trim()).filter(Boolean)
-          .map(c => (typeof window.buildWorkMetaBadgeHtml === 'function')
-            ? window.buildWorkMetaBadgeHtml('crop', c, { prefix: '🌱 ' })
-            : `<span style="font-size:11px;color:#555;">🌱 ${c}</span>`).join(' ');
-        h += `<div style="font-size:14px; margin-bottom:5px; display:flex; flex-wrap:wrap; align-items:center; gap:6px;">${workBadge}${categoryBadge} ${progressBadge}</div>`;
-        if (cropBadges) h += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:5px;">${cropBadges}</div>`;
-        if (item.data.prepTargetWork && typeof window.isMetaTargetCategory_ === 'function'
-          && window.isMetaTargetCategory_(item.data.category || catName || '')) {
-          h += `<div style="font-size:12px;color:#6A1B9A;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">📋 ${item.data.category || catName || '準備'}の対象: <b>${item.data.prepTargetWork}</b>${item.data.prepTargetCategory ? '（' + item.data.prepTargetCategory + '）' : ''}</div>`;
-        }
-        if (item.data.ridgeCount || item.data.workedRidges || item.data.nextRidge) {
-          const rc = parseInt(item.data.ridgeCount, 10);
-          const ridgeInfo = (rc > 0) ? `${rc}本` : (item.data.workedRidges || '未設定');
-          h += `<div style="font-size:12px;color:#00796b;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #b2dfdb;">🛤️ 畝立て: ${ridgeInfo}${item.data.nextRidge ? ' / 次回=' + item.data.nextRidge : ''}</div>`;
-        }
-        if (item.data.irrigationValves && Array.isArray(item.data.irrigationValves) && item.data.irrigationValves.length) {
-          const irrigText = item.data.irrigationValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
-          h += `<div style="font-size:12px;color:#1565C0;margin-bottom:5px;background:#e3f2fd;padding:4px;border-radius:4px;border:1px solid #90caf9;">💧 吸水栓: ${irrigText}</div>`;
-        }
-        if (item.data.drainageValves && Array.isArray(item.data.drainageValves) && item.data.drainageValves.length) {
-          const drainText = item.data.drainageValves.map(v => `${v.name || ''}: ${v.summary || ''}`).join(' ／ ');
-          h += `<div style="font-size:12px;color:#00838F;margin-bottom:5px;background:#e0f7fa;padding:4px;border-radius:4px;border:1px solid #4dd0e1;">🕳️ 排水溝: ${drainText}</div>`;
-        }
-        if (item.data.installedPumps && Array.isArray(item.data.installedPumps) && item.data.installedPumps.length) {
-          const pumpText = item.data.installedPumps.map(p => p.name || p.id).join('、');
-          h += `<div style="font-size:12px;color:#00695C;margin-bottom:5px;background:#e0f2f1;padding:4px;border-radius:4px;border:1px solid #80cbc4;">🚰 ポンプ設置中: ${pumpText}</div>`;
-        }
-        if (item.data.detailedWorks) h += `<div style="font-size:12px;color:#1a73e8;margin-bottom:5px;">✅ 詳細: ${item.data.detailedWorks}</div>`;
-        if (item.data.registeredWork && typeof window.formatRegisteredWorkBadgeHtml_ === 'function') {
-          h += window.formatRegisteredWorkBadgeHtml_(item.data.registeredWork);
-        }
-        if (Array.isArray(item.data.workMembers) && item.data.workMembers.length) {
-          const memEsc = window.escapeWorkUiHtml_ || (s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'));
-          const memNames = item.data.workMembers.map(m => m && (m.name || m.id)).filter(Boolean).join('、');
-          if (memNames) {
-            const sharedNote = item.data.sharedFromAuthor ? ` <span style="font-size:10px;color:#1565C0;">（${memEsc(item.data.sharedFromAuthor)}さんの記録から同時登録）</span>` : '';
-            h += `<div style="font-size:12px;color:#0D47A1;margin-bottom:5px;background:#E3F2FD;padding:4px 8px;border-radius:4px;border:1px solid #90CAF9;">👥 メンバー: ${memEsc(memNames)}${sharedNote}</div>`;
-          }
-        }
-        if (Array.isArray(item.data.concurrentWorks) && item.data.concurrentWorks.length) {
-          const cwText = item.data.concurrentWorks.map(cw =>
-            typeof window.formatConcurrentWorkSummary_ === 'function'
-              ? window.formatConcurrentWorkSummary_(cw)
-              : (cw.workName || '')
-          ).filter(Boolean).join(' ／ ');
-          if (cwText) h += `<div style="font-size:12px;color:#5E35B1;margin-bottom:5px;background:#F3E5F5;padding:4px 8px;border-radius:4px;border:1px solid #CE93D8;">🔀 同時作業: ${cwText}</div>`;
-        }
-
-        if (item.data.workDate) h += `<div style="font-size:13px;color:#555;margin-bottom:5px;">作業日: ${item.data.workDate}</div>`;
-        if (item.data.startTime) h += `<span style="font-size:13px;color:#555;display:block;margin-bottom:5px;">時間: ${item.data.startTime || '--:--'} 〜 ${item.data.endTime || '--:--'} ➔ 計: <b>${item.data.totalTime || '--'}</b>${(parseInt(item.data.breakMins, 10) > 0) ? ` <span style="color:#e65100;">（休憩${parseInt(item.data.breakMins, 10)}分）</span>` : ''}</span>`;
-        if (item.data.usedTools) h += `<div style="font-size:12px;color:#555;margin-bottom:3px;">🔧 道具: ${item.data.usedTools}</div>`;
-        if (typeof window.formatUsedItemsHistoryHtml_ === 'function') {
-          h += window.formatUsedItemsHistoryHtml_(item.data);
-        } else if (item.data.usedMaterials) {
-          h += `<div style="font-size:12px;color:#555;margin-bottom:5px;">📦 資材・農機: ${item.data.usedMaterials}</div>`;
-        }
-        if (item.data.maintenanceTool) {
-          const mtList = Array.isArray(item.data.maintenanceTargets) ? item.data.maintenanceTargets : [];
-          const perMachine = mtList.some(t => t && (t.symptom || t.content || t.parts));
-          const body = perMachine
-            ? mtList.map(t => {
-              const bits = [
-                t.symptom ? `症状:${t.symptom}` : '',
-                t.content ? `内容:${t.content}` : '',
-                t.parts ? `部品:${t.parts}` : ''
-              ].filter(Boolean).join(' / ') || '（詳細なし）';
-              return `・${t.name || t.id || '対象'}: ${bits}`;
-            }).join('<br>')
-            : `内容: ${item.data.maintenanceContent || '-'} / 部品: ${item.data.maintenanceParts || '-'}`;
-          h += `<div style="font-size:12px; background:#fff3e0; border:1px solid #ffcc80; padding:6px; border-radius:4px; margin-bottom:5px; color:#e65100;">
-                            <b>[整備記録]</b> 対象: ${item.data.maintenanceTool}<br>
-                            ${body}
-                          </div>`;
-        }
-      } else if (item.type !== 'work' && item.data) {
-        h += `<div style="font-size:14px; margin-bottom:5px;"><b>🌱 生育記録: ${item.data.crop || '-'}</b> <span style="background:#e3f2fd;padding:2px 6px;border-radius:4px;font-size:12px;color:#1a73e8;margin-left:5px;">${item.data.fieldStatus || '-'}</span></div>`;
-        let tags = [];
-        if (item.data.mowing) tags.push('草刈り'); if (item.data.weeding) tags.push('草抜き'); if (item.data.drainage) tags.push('排水');
-        if (item.data.bug) tags.push('虫食有'); if (item.data.disease) tags.push('病気有'); if (item.data.flower) tags.push('花芽有');
-        if (tags.length) h += `<div style="margin-bottom:5px;display:flex;flex-wrap:wrap;gap:4px;">${tags.map(t => `<span style="background:#eee;color:#333;font-size:11px;padding:2px 6px;border-radius:10px;">${t}</span>`).join('')}</div>`;
-        if (item.data.notes) h += `<div style="font-size:12px; color:#444; background:#f9f9f9; padding:8px; border-radius:4px; margin-bottom:5px; white-space:pre-wrap;">${item.data.notes}</div>`;
-      }
-
-      if (item.urls && item.urls.length > 0) {
-        h += `<div style="display:flex; gap:10px; overflow-x:auto; margin-top:10px;">`;
-        item.urls.forEach(u => {
-          h += `<a href="${u.replace('sz=w800', 'sz=w1600')}" target="_blank" style="flex-shrink:0;"><img src="${u}" style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid #ddd;"></a>`;
-        });
-        h += `</div>`;
-      } else if (item.url) {
-        h += `<div style="margin-top:10px;"><a href="${item.url.replace('sz=w800', 'sz=w1600')}" target="_blank"><img src="${item.url}" style="max-width:100%; height:auto; border-radius:4px; border:1px solid #ddd;"></a></div>`;
-      }
-      h += `</div>`;
+      h += renderAllHistoryCardHtml(item);
     });
   }
+
   document.getElementById('rightPanelContent').innerHTML = h;
   document.getElementById('rightPanelFooter').innerHTML = '';
   document.getElementById('rightPanel').classList.add('open');

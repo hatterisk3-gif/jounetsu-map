@@ -13,6 +13,8 @@
   const PHOTO_MAX_SIDE = 1280;
   const ALL = '__all__';
   const LOW = '__low__';
+  const STOCKTAKE = '__stocktake__';
+  const DAY_MS = 86400000;
   const OP_LABEL = { add: '補充', use: '使う', count: '数える' };
   const OP_ICON = { add: '＋', use: '−', count: '🔢' };
   const LOG_KIND = { '入庫': 'add', '初期入庫': 'add', '出庫': 'use', '棚卸': 'count', '発注': 'order' };
@@ -25,6 +27,7 @@
 
   const state = {
     items: [],
+    costItems: [],
     settings: null,
     loaded: false,
     loading: null,
@@ -32,6 +35,10 @@
     filter: ALL,
     query: '',
     lastLowIds: null,
+    lastStocktakeIds: null,
+    forecast: null,
+    forecastOpts: { paceDays: 90, horizonDays: 0 },
+    forecastSheet: null,
     sheets: [],
     detailSheet: null
   };
@@ -170,6 +177,42 @@
   function isLow(it) {
     const min = Number(it && it.minStock);
     return Number.isFinite(min) && min > 0 && (Number(it.stock) || 0) < min;
+  }
+
+  function isStocktakeAlertAllowed() {
+    if (global.INVENTORY_ALLOW_STOCKTAKE_ALERT === false) return false;
+    if (global.INVENTORY_ALLOW_STOCKTAKE_ALERT === true) return true;
+    return isSettingsAllowed();
+  }
+
+  function stocktakeStatus(it, nowMs) {
+    const days = Number(it && it.stocktakeIntervalDays);
+    if (!Number.isFinite(days) || days <= 0) {
+      return { enabled: false, due: false, days: 0, lastMs: 0, baseMs: 0, nextMs: 0, elapsedDays: 0, overdueDays: 0, neverCounted: false };
+    }
+    const now = nowMs != null ? nowMs : Date.now();
+    const lastMs = parseTs(it && it.lastCountAt);
+    const createdMs = parseTs(it && it.createdAt);
+    const baseMs = lastMs || createdMs;
+    const neverCounted = !lastMs;
+    if (!baseMs) {
+      return { enabled: true, due: true, days, lastMs: 0, baseMs: 0, nextMs: 0, elapsedDays: 0, overdueDays: 0, neverCounted: true };
+    }
+    const nextMs = baseMs + days * DAY_MS;
+    const elapsedDays = Math.max(0, Math.floor((now - baseMs) / DAY_MS));
+    const due = now >= nextMs;
+    const overdueDays = due ? Math.max(0, Math.floor((now - nextMs) / DAY_MS)) : 0;
+    return { enabled: true, due, days, lastMs, baseMs, nextMs, elapsedDays, overdueDays, neverCounted };
+  }
+
+  function isStocktakeDue(it) {
+    return isStocktakeAlertAllowed() && stocktakeStatus(it).due;
+  }
+
+  function isForecastAllowed() {
+    if (global.INVENTORY_ALLOW_FORECAST === false) return false;
+    if (global.INVENTORY_ALLOW_FORECAST === true) return true;
+    return isStocktakeAlertAllowed();
   }
 
   // supabase-bridge.js の invOrderTiming_ と同じ判定
@@ -481,7 +524,9 @@
     if (state.loading) return state.loading;
     const p = call('inventory_getAll', {}).then((res) => {
       state.items = (res && Array.isArray(res.items)) ? res.items : [];
+      state.costItems = (res && Array.isArray(res.costItems)) ? res.costItems : [];
       state.settings = (res && res.settings) || defaultSettings();
+      state.forecast = null;
       state.loaded = true;
       syncLegacy();
       updateBadge();
@@ -509,13 +554,32 @@
   function updateBadge(list) {
     const source = badgeSource(list);
     const low = source.filter(isLow);
+    const due = isStocktakeAlertAllowed() ? source.filter((it) => stocktakeStatus(it).due) : [];
     document.querySelectorAll('[data-inventory-badge]').forEach((b) => {
-      b.textContent = low.length > 99 ? '99+' : String(low.length);
-      b.style.display = low.length ? '' : 'none';
+      if (low.length) {
+        b.textContent = low.length > 99 ? '99+' : String(low.length);
+        b.classList.remove('is-stocktake');
+        b.style.display = '';
+      } else if (due.length) {
+        b.textContent = due.length > 99 ? '99+' : String(due.length);
+        b.classList.add('is-stocktake');
+        b.style.display = '';
+      } else {
+        b.classList.remove('is-stocktake');
+        b.style.display = 'none';
+      }
     });
     const btn = document.getElementById('btnInventory');
-    if (btn) btn.title = low.length ? `在庫管理（最低在庫を下回る資材 ${low.length}件）` : '在庫管理（農薬・肥料・資材）';
-    if (source.length) announceLow(low);
+    if (btn) {
+      const parts = [];
+      if (low.length) parts.push(`最低在庫を下回る資材 ${low.length}件`);
+      if (due.length) parts.push(`棚卸時期の資材 ${due.length}件`);
+      btn.title = parts.length ? `在庫管理（${parts.join(' / ')}）` : '在庫管理（農薬・肥料・資材）';
+    }
+    if (source.length) {
+      announceLow(low);
+      announceStocktake(due);
+    }
     return low.length;
   }
 
@@ -534,6 +598,25 @@
       kind: 'warn',
       duration: 9000,
       onClick: () => open({ filter: LOW, query: '' })
+    });
+  }
+
+  // ページを開いて最初にデータが揃ったとき、棚卸時期を迎えた資材があれば一度だけ知らせる（管理者・予定画面のみ）
+  function announceStocktake(due) {
+    if (!isStocktakeAlertAllowed()) return;
+    const first = state.lastStocktakeIds === null;
+    state.lastStocktakeIds = due.map((it) => String(it.id));
+    if (!first || !due.length || state.open) return;
+    const sig = `${todayKey()}:${state.lastStocktakeIds.slice().sort().join(',')}`;
+    try {
+      if (sessionStorage.getItem('invmStocktakeAnnounced') === sig) return;
+      sessionStorage.setItem('invmStocktakeAnnounced', sig);
+    } catch (e) { /* プライベートモード */ }
+    const names = due.slice(0, 3).map((it) => it.name).join('、') + (due.length > 3 ? ' ほか' : '');
+    toast(`🔢 棚卸の時期を迎えた資材が <b>${due.length}件</b> あります<br><small>${esc(names)}（タップで確認）</small>`, {
+      kind: 'stocktake',
+      duration: 9000,
+      onClick: () => open({ filter: STOCKTAKE, query: '' })
     });
   }
 
@@ -572,12 +655,14 @@
     root.innerHTML = `
       <header class="invm-header">
         <div class="invm-title">📦 在庫管理</div>
+        ${isForecastAllowed() ? '<button type="button" class="invm-icon-btn" data-act="forecast" aria-label="在庫予測" title="在庫予測（消費ペース・栽培計画）">📈</button>' : ''}
         <button type="button" class="invm-icon-btn" data-act="reload" aria-label="再読み込み" title="再読み込み">🔄</button>
         ${isSettingsAllowed() ? '<button type="button" class="invm-icon-btn" data-act="settings" aria-label="設定" title="カテゴリ・仕入れ先・発注メールの設定">⚙️</button>' : ''}
         <button type="button" class="invm-icon-btn" data-act="close" aria-label="閉じる" title="閉じる">✕</button>
       </header>
       <div class="invm-toolbar">
         <div class="invm-alert-banner" data-act="filter-low" hidden></div>
+        <div class="invm-alert-banner is-stocktake" data-act="filter-stocktake" hidden></div>
         <div class="invm-search-row">
           <input type="search" class="invm-search" placeholder="🔍 資材名・バーコード・仕入れ先で検索" enterkeyhint="search" autocomplete="off">
           <button type="button" class="invm-scan-btn" data-act="scan-search" title="バーコードを読み取って探す">📷 読取</button>
@@ -602,6 +687,7 @@
     const id = holder ? holder.getAttribute('data-id') : '';
     switch (el.getAttribute('data-act')) {
       case 'close': close(); break;
+      case 'forecast': if (isForecastAllowed()) openForecastSheet(); break;
       case 'reload': load().catch(() => {}); break;
       case 'settings': if (isSettingsAllowed()) openSettings(); break;
       case 'new': openItemForm(null, currentCategoryFilter() ? { category: currentCategoryFilter() } : null); break;
@@ -612,6 +698,10 @@
         break;
       case 'filter-low':
         state.filter = LOW;
+        renderAll();
+        break;
+      case 'filter-stocktake':
+        state.filter = STOCKTAKE;
         renderAll();
         break;
       case 'add-category': if (isSettingsAllowed()) addCategoryFromList(); break;
@@ -627,7 +717,7 @@
   }
 
   function currentCategoryFilter() {
-    return state.filter !== ALL && state.filter !== LOW && state.filter ? state.filter : '';
+    return state.filter !== ALL && state.filter !== LOW && state.filter !== STOCKTAKE && state.filter ? state.filter : '';
   }
 
   function renderAll() {
@@ -639,11 +729,13 @@
   function renderChips() {
     const box = ensureRoot().querySelector('[data-chips]');
     const lowCount = state.items.filter(isLow).length;
+    const dueCount = isStocktakeAlertAllowed() ? state.items.filter(isStocktakeDue).length : 0;
     const counts = {};
     state.items.forEach((it) => { counts[it.category || ''] = (counts[it.category || ''] || 0) + 1; });
     const chip = (key, label, n, cls) => `<button type="button" class="invm-chip${cls ? ` ${cls}` : ''}${state.filter === key ? ' is-active' : ''}" data-act="filter" data-filter="${esc(key)}">${esc(label)} <span class="invm-chip-count">${n}</span></button>`;
     let html = chip(ALL, 'すべて', state.items.length);
     if (lowCount) html += chip(LOW, '⚠️ 要補充', lowCount, 'is-alert');
+    if (dueCount) html += chip(STOCKTAKE, '🔢 要棚卸', dueCount, 'is-stocktake');
     allCategories().forEach((c) => { html += chip(c, `${iconOfCategory(c)} ${c}`, counts[c] || 0); });
     if (counts['']) html += chip('', '未分類', counts['']);
     if (isSettingsAllowed()) html += '<button type="button" class="invm-chip is-add" data-act="add-category">＋ カテゴリ</button>';
@@ -651,30 +743,50 @@
   }
 
   function renderBanner() {
-    const el = ensureRoot().querySelector('.invm-alert-banner');
+    const root = ensureRoot();
+    const lowEl = root.querySelector('[data-act="filter-low"]');
     const low = state.items.filter(isLow);
     if (!low.length) {
-      el.hidden = true;
-      return;
+      lowEl.hidden = true;
+    } else {
+      const names = low.slice(0, 3).map((it) => it.name).join('、') + (low.length > 3 ? ' ほか' : '');
+      lowEl.hidden = false;
+      lowEl.innerHTML = `⚠️ 最低在庫を下回っている資材が <b>${low.length}件</b>：${esc(names)} <span class="invm-banner-link">表示 ›</span>`;
     }
-    const names = low.slice(0, 3).map((it) => it.name).join('、') + (low.length > 3 ? ' ほか' : '');
-    el.hidden = false;
-    el.innerHTML = `⚠️ 最低在庫を下回っている資材が <b>${low.length}件</b>：${esc(names)} <span class="invm-banner-link">表示 ›</span>`;
+    const stEl = root.querySelector('[data-act="filter-stocktake"]');
+    if (!stEl) return;
+    const due = isStocktakeAlertAllowed() ? state.items.filter(isStocktakeDue) : [];
+    if (!due.length) {
+      stEl.hidden = true;
+    } else {
+      const names = due.slice(0, 3).map((it) => it.name).join('、') + (due.length > 3 ? ' ほか' : '');
+      stEl.hidden = false;
+      stEl.innerHTML = `🔢 棚卸時期の資材が <b>${due.length}件</b>：${esc(names)} <span class="invm-banner-link">表示 ›</span>`;
+    }
   }
 
   function filteredItems() {
     const terms = normalizeQuery(state.query).split(/\s+/).filter(Boolean);
     let f = state.filter;
     if (f === LOW && !state.items.some(isLow)) f = ALL;
+    if (f === STOCKTAKE && !state.items.some(isStocktakeDue)) f = ALL;
     return state.items.filter((it) => {
       if (f === LOW && !isLow(it)) return false;
-      if (f !== ALL && f !== LOW && (it.category || '') !== f) return false;
+      if (f === STOCKTAKE && !isStocktakeDue(it)) return false;
+      if (f !== ALL && f !== LOW && f !== STOCKTAKE && (it.category || '') !== f) return false;
       if (!terms.length) return true;
       const hay = normalizeQuery([it.name, it.barcode, it.category, it.supplierName, it.signName, it.note].join(' '));
       return terms.every((t) => hay.indexOf(t) >= 0);
     }).sort((a, b) => {
-      const la = isLow(a) ? 0 : 1;
-      const lb = isLow(b) ? 0 : 1;
+      if (f === STOCKTAKE) {
+        const sa = stocktakeStatus(a);
+        const sb = stocktakeStatus(b);
+        if (sa.overdueDays !== sb.overdueDays) return sb.overdueDays - sa.overdueDays;
+        if (sa.elapsedDays !== sb.elapsedDays) return sb.elapsedDays - sa.elapsedDays;
+        return String(a.name).localeCompare(String(b.name), 'ja');
+      }
+      const la = isLow(a) ? 0 : (isStocktakeDue(a) ? 1 : 2);
+      const lb = isLow(b) ? 0 : (isStocktakeDue(b) ? 1 : 2);
       if (la !== lb) return la - lb;
       return String(a.name).localeCompare(String(b.name), 'ja');
     });
@@ -686,6 +798,8 @@
 
   function cardHtml(it) {
     const low = isLow(it);
+    const st = stocktakeStatus(it);
+    const due = isStocktakeAlertAllowed() && st.due;
     const t = orderTiming(it);
     const unit = unitOf(it);
     const meta = [];
@@ -694,10 +808,14 @@
     if (it.signName) meta.push(`📍${esc(it.signName)}`);
     const status = [];
     if (low) status.push(`<span class="invm-badge is-low">⚠️ 最低${esc(fmtNum(it.minStock))}${esc(unit)}未満</span>`);
+    if (due) {
+      const sub = st.neverCounted ? '未実施' : `最終 ${fmtDate(st.lastMs)}・${st.elapsedDays}日経過`;
+      status.push(`<span class="invm-badge is-stocktake">🔢 棚卸時期（${esc(sub)}）</span>`);
+    }
     if (t.pending) status.push(`<span class="invm-badge is-order">📧 ${esc(fmtDate(t.lastOrderMs))} 発注済み・入荷待ち</span>`);
     else if (low && !isEmail(it.supplierEmail)) status.push('<span class="invm-badge">仕入れ先メール未登録</span>');
     return `
-      <article class="invm-card${low ? ' is-low' : ''}" data-id="${esc(it.id)}">
+      <article class="invm-card${low ? ' is-low' : (due ? ' is-stocktake' : '')}" data-id="${esc(it.id)}">
         <div class="invm-card-main" data-act="detail">
           <div class="invm-thumb">${thumbHtml(it)}</div>
           <div class="invm-card-body">
@@ -890,12 +1008,14 @@
       sheet.busy(true, '記録しています…');
       try {
         const res = await call('inventory_move', { id: it.id, op, qty: q, note: sheet.q('[data-note]').value.trim(), userName: userName() });
+        state.forecast = null;
         upsertItem(res.item);
         syncLegacy(res.item);
         sheet.close();
         renderAll();
         updateBadge();
         refreshDetail(res.item.id);
+        refreshForecastIfOpen();
         const diff = (Number(res.after) || 0) - (Number(res.before) || 0);
         toast(`✅ ${esc(it.name)}：${OP_LABEL[op]} ${esc(fmtNum(q))}${esc(unit)}` +
           (op === 'count' ? `（差 ${diff >= 0 ? '+' : ''}${esc(fmtNum(diff))}）` : '') +
@@ -945,10 +1065,16 @@
     const src = Object.assign({
       name: '', barcode: '', category: '', size: '', volUnit: '', stock: '', stockUnit: '',
       signId: '', signName: '', supplierName: '', supplierEmail: '', minStock: '', orderQty: '',
-      orderIntervalDays: '', note: '', photos: []
+      orderIntervalDays: '', stocktakeIntervalDays: '', costLinks: [], note: '', photos: []
     }, item || {}, prefill || {});
     const v = (x) => (x == null ? '' : String(x));
     const photos = (src.photos || []).filter(isHttpUrl).slice(0, MAX_PHOTOS).map((u) => ({ url: u }));
+    const costLinks = (Array.isArray(src.costLinks) ? src.costLinks : [])
+      .map((x) => ({
+        costItemId: String((x && x.costItemId) || '').trim(),
+        costUnitPerStock: Number(x && x.costUnitPerStock) > 0 ? Number(x.costUnitPerStock) : 1
+      }))
+      .filter((x) => x.costItemId);
     const cats = allCategories();
     let selectedCat = src.category || '';
     if (selectedCat && cats.indexOf(selectedCat) < 0) cats.push(selectedCat);
@@ -1012,6 +1138,23 @@
           <p class="invm-help">個数が「最低在庫個数」を下回るとアラートを表示し、仕入れ先のメールアドレスがあれば「発注個数」を自動でメール発注します。発注後は「補充」を記録するまで再発注しません。「発注間隔」を入れると、前回の発注からその日数が経つまで次の自動発注をしません。</p>
         </section>
         <section class="invm-sec">
+          <div class="invm-sec-title">🔢 定期棚卸アラート</div>
+          <label class="invm-label" for="invmF_stocktakeIntervalDays">棚卸間隔（日）</label>
+          <input class="invm-input" id="invmF_stocktakeIntervalDays" name="stocktakeIntervalDays" inputmode="numeric" placeholder="例: 30" value="${esc(v(src.stocktakeIntervalDays))}">
+          <p class="invm-help">最後の「数える（棚卸）」から指定日数が経つと、管理画面・予定画面でアラートを表示します。空欄にすると棚卸アラートはオフになります。</p>
+        </section>
+        ${isForecastAllowed() ? `
+        <section class="invm-sec">
+          <div class="invm-sec-title">📈 在庫予測（原価項目との紐づけ）</div>
+          <div data-cost-links></div>
+          <div class="invm-link-add">
+            <select class="invm-input" data-link-select></select>
+            <input class="invm-input is-ratio" type="number" min="0.001" step="any" data-link-add-ratio value="1" placeholder="換算" title="1在庫あたりの原価単位数">
+            <button type="button" class="invm-btn is-sub" data-f="add-link">＋ 紐づけ</button>
+          </div>
+          <p class="invm-help">栽培計画（原価設計）から必要量を自動計算するために紐づけます。原価の単位と在庫の単位が違う場合は「1在庫あたりの原価単位数」を入力してください（例：原価が kg で在庫が 20kg袋なら 20）。</p>
+        </section>` : ''}
+        <section class="invm-sec">
           <div class="invm-sec-title">📷 写真（${MAX_PHOTOS}枚まで）</div>
           <div class="invm-photos" data-photos></div>
           <div class="invm-row is-wrap">
@@ -1044,6 +1187,34 @@
     const renderCats = () => {
       sheet.q('[data-cats]').innerHTML = cats.map((c) => `<button type="button" class="invm-chip${c === selectedCat ? ' is-active' : ''}" data-cat="${esc(c)}">${esc(iconOfCategory(c))} ${esc(c)}</button>`).join('') +
         (isSettingsAllowed() ? '<button type="button" class="invm-chip is-add" data-f="add-cat">＋ 追加</button>' : '');
+    };
+
+    const renderCostLinks = () => {
+      const box = sheet.q('[data-cost-links]');
+      const sel = sheet.q('[data-link-select]');
+      if (!box || !sel) return;
+      const byId = {};
+      (state.costItems || []).forEach((c) => { byId[String(c.id)] = c; });
+      box.innerHTML = costLinks.length
+        ? costLinks.map((lk, i) => {
+            const c = byId[lk.costItemId];
+            const label = c ? `${c.name}${c.spec ? `（${c.spec}）` : ''}` : lk.costItemId;
+            const cat = c && c.category ? `<span class="invm-badge">${esc(c.category)}</span> ` : '';
+            return `
+              <div class="invm-link-row">
+                <div class="invm-link-name">${cat}${esc(label)}</div>
+                <label class="invm-link-ratio">1在庫=
+                  <input class="invm-input is-ratio" type="number" min="0.001" step="any" data-link-ratio="${i}" value="${esc(fmtNum(lk.costUnitPerStock))}">
+                </label>
+                <button type="button" class="invm-icon-btn" data-link-del="${i}" aria-label="紐づけ解除">✕</button>
+              </div>`;
+          }).join('')
+        : '<div class="invm-help invm-m0">まだ原価項目が紐づいていません</div>';
+      const used = new Set(costLinks.map((lk) => lk.costItemId));
+      const avail = (state.costItems || []).filter((c) => !used.has(String(c.id)));
+      sel.innerHTML = avail.length
+        ? `<option value="">原価項目を選択…</option>${avail.map((c) => `<option value="${esc(c.id)}">${esc([c.category, c.name, c.spec].filter(Boolean).join(' / '))}</option>`).join('')}`
+        : '<option value="">（選択できる原価項目がありません）</option>';
     };
 
     const renderPhotos = () => {
@@ -1095,7 +1266,7 @@
     const copyLocal = (srcId) => {
       const m = findItem(srcId);
       if (!m) return;
-      ['name', 'size', 'volUnit', 'stockUnit', 'supplierName', 'supplierEmail', 'minStock', 'orderQty', 'orderIntervalDays', 'note'].forEach((k) => {
+      ['name', 'size', 'volUnit', 'stockUnit', 'supplierName', 'supplierEmail', 'minStock', 'orderQty', 'orderIntervalDays', 'stocktakeIntervalDays', 'note'].forEach((k) => {
         if (m[k] != null && m[k] !== '' && f(k)) f(k).value = String(m[k]);
       });
       if (m.category) {
@@ -1283,7 +1454,7 @@
       if (!name) { markInvalid(f('name'), '資材名を入力してください'); return; }
       const supplierEmail = f('supplierEmail').value.trim();
       if (supplierEmail && !isEmail(supplierEmail)) { markInvalid(f('supplierEmail'), 'メールアドレスの形式が正しくありません'); return; }
-      for (const key of ['stock', 'minStock', 'orderQty', 'orderIntervalDays']) {
+      for (const key of ['stock', 'minStock', 'orderQty', 'orderIntervalDays', 'stocktakeIntervalDays']) {
         const raw = f(key).value.trim();
         if (raw && (num(raw) == null || num(raw) < 0)) { markInvalid(f(key), '0以上の数字で入力してください'); return; }
       }
@@ -1294,6 +1465,17 @@
       if (signId === '__keep__') {
         signId = src.signId || '';
         signName = src.signName || '';
+      }
+      if (isForecastAllowed()) {
+        for (let i = 0; i < costLinks.length; i++) {
+          const rEl = sheet.q(`[data-link-ratio="${i}"]`);
+          const rVal = rEl ? num(rEl.value) : costLinks[i].costUnitPerStock;
+          if (!(rVal > 0)) {
+            if (rEl) markInvalid(rEl, '換算数は 0 より大きい数字で入力してください');
+            return;
+          }
+          costLinks[i].costUnitPerStock = rVal;
+        }
       }
       const stockRaw = f('stock').value.trim();
       const payload = {
@@ -1311,8 +1493,10 @@
         minStock: f('minStock').value.trim(),
         orderQty: f('orderQty').value.trim(),
         orderIntervalDays: f('orderIntervalDays').value.trim(),
+        stocktakeIntervalDays: f('stocktakeIntervalDays').value.trim(),
         note: f('note').value
       };
+      if (isForecastAllowed()) payload.costLinks = costLinks;
       if (!isEdit) payload.stock = stockRaw;
       else if (stockRaw !== '' && num(stockRaw) !== num(origStock)) payload.stock = stockRaw;
 
@@ -1323,6 +1507,7 @@
           photos: photos.map((p) => p.url || p.dataUrl),
           userName: userName()
         });
+        state.forecast = null;
         if (res.settings) state.settings = res.settings;
         upsertItem(res.item);
         syncLegacy(res.item);
@@ -1331,6 +1516,7 @@
         renderAll();
         updateBadge();
         refreshDetail(res.item.id);
+        refreshForecastIfOpen();
         toast(`✅ 「${esc(res.item.name)}」を${isEdit ? '保存' : '登録'}しました`, { kind: 'ok' });
         if (res.alert || res.order) notifyStockResult(res.item, res.alert, res.order);
         if (!isEdit && state.open) setTimeout(() => focusCard(res.item.id), 50);
@@ -1345,6 +1531,7 @@
       sheet.busy(true, '削除しています…');
       try {
         await call('inventory_deleteItem', { id: item.id, userName: userName() });
+        state.forecast = null;
         removeItem(item.id);
         syncLegacy(null, item.id);
         dirty = false;
@@ -1352,6 +1539,7 @@
         if (state.detailSheet && sameId(state.detailSheet.itemId, item.id)) state.detailSheet.close();
         renderAll();
         updateBadge();
+        refreshForecastIfOpen();
         toast('🗑 削除しました', { kind: 'ok' });
       } catch (err) {
         sheet.busy(false);
@@ -1370,8 +1558,14 @@
     };
 
     sheet.el.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-f],[data-cat],[data-photo-del],[data-photo-main]');
+      const t = e.target.closest('[data-f],[data-cat],[data-photo-del],[data-photo-main],[data-link-del]');
       if (!t) return;
+      if (t.hasAttribute('data-link-del')) {
+        costLinks.splice(Number(t.getAttribute('data-link-del')), 1);
+        dirty = true;
+        renderCostLinks();
+        return;
+      }
       if (t.hasAttribute('data-cat')) {
         const c = t.getAttribute('data-cat');
         selectedCat = selectedCat === c ? '' : c;
@@ -1403,6 +1597,19 @@
         case 'add-cat': addCategoryFromForm(); break;
         case 'paste': pasteFromClipboard(); break;
         case 'gimg': openGoogleImages(); break;
+        case 'add-link': {
+          const sel = sheet.q('[data-link-select]');
+          const ratioEl = sheet.q('[data-link-add-ratio]');
+          const cid = sel ? sel.value : '';
+          if (!cid) { toast('紐づける原価項目を選んでください', { kind: 'warn' }); return; }
+          const r = ratioEl ? num(ratioEl.value) : 1;
+          if (!(r > 0)) { markInvalid(ratioEl, '換算数は 0 より大きい数字で入力してください'); return; }
+          if (!costLinks.some((x) => x.costItemId === cid)) costLinks.push({ costItemId: cid, costUnitPerStock: r });
+          if (ratioEl) ratioEl.value = '1';
+          dirty = true;
+          renderCostLinks();
+          break;
+        }
         case 'cancel': sheet.requestClose(); break;
         case 'save': save(); break;
         case 'delete': del(); break;
@@ -1413,6 +1620,13 @@
       const t = e.target;
       if (t.matches('[data-paste-zone]')) {
         t.textContent = '';
+        return;
+      }
+      if (t.hasAttribute('data-link-ratio')) {
+        const i = Number(t.getAttribute('data-link-ratio'));
+        const v = num(t.value);
+        if (costLinks[i] && v > 0) costLinks[i].costUnitPerStock = v;
+        dirty = true;
         return;
       }
       if (t.name) {
@@ -1436,6 +1650,7 @@
     });
 
     renderCats();
+    renderCostLinks();
     renderPhotos();
     renderLocalMatch();
     if (opts.autoLookup && normBarcode(src.barcode) && !String(src.name || '').trim()) runLookup();
@@ -1446,6 +1661,8 @@
   function detailHtml(it) {
     const unit = unitOf(it);
     const low = isLow(it);
+    const st = stocktakeStatus(it);
+    const due = isStocktakeAlertAllowed() && st.due;
     const t = orderTiming(it);
     const o = settings().order || {};
     const photos = (it.photos || []).filter(isHttpUrl);
@@ -1463,9 +1680,13 @@
         ? '自動発注はオフです（⚙️ 設定）。'
         : '自動発注はオフです（管理画面・予定画面の在庫設定で変更できます）。');
       else if (t.waitInterval) lines.push(`⏳ 発注間隔のため、次の自動発注は ${fmtDate(t.nextMs)} 以降です。`);
-      status = `<div class="invm-note-box is-error">${lines.map(esc).join('<br>')}</div>`;
+      status += `<div class="invm-note-box is-error">${lines.map(esc).join('<br>')}</div>`;
     } else if (t.pending) {
-      status = `<div class="invm-note-box">📧 ${esc(fmtDate(t.lastOrderMs, true))} に${esc(lastQty)} 発注済み（入荷待ち）</div>`;
+      status += `<div class="invm-note-box">📧 ${esc(fmtDate(t.lastOrderMs, true))} に${esc(lastQty)} 発注済み（入荷待ち）</div>`;
+    }
+    if (due) {
+      const lastLabel = st.neverCounted ? '棚卸未実施' : `最終棚卸 ${fmtDate(st.lastMs)}・${st.elapsedDays}日経過`;
+      status += `<div class="invm-note-box is-stocktake">🔢 棚卸の時期です（設定：${esc(fmtNum(st.days))}日ごと / ${esc(lastLabel)}）。「数える」で現在の在庫数を記録してください。</div>`;
     }
     const rows = [];
     const row = (k, val) => { if (val) rows.push(`<dt>${esc(k)}</dt><dd>${val}</dd>`); };
@@ -1481,6 +1702,15 @@
       Number(it.orderQty) > 0 ? `発注 ${fmtNum(it.orderQty)}${unit}` : '',
       Number(it.orderIntervalDays) > 0 ? `間隔 ${fmtNum(it.orderIntervalDays)}日` : ''
     ].filter(Boolean).join(' / ')));
+    if (st.enabled) {
+      row('棚卸設定', esc([
+        `${fmtNum(st.days)}日ごと`,
+        st.lastMs ? `最終 ${fmtDate(st.lastMs)}` : '未実施',
+        st.nextMs ? `次回 ${fmtDate(st.nextMs)}` : ''
+      ].filter(Boolean).join(' / ')));
+    } else if (st.lastMs) {
+      row('棚卸設定', esc(`最終棚卸 ${fmtDate(st.lastMs)}`));
+    }
     row('メモ', esc(it.note).replace(/\n/g, '<br>'));
     return `
       ${photos.length ? `<div class="invm-detail-photos">${photos.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer"><img src="${esc(displayPhotoUrl(u))}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>`).join('')}</div>` : ''}
@@ -1550,7 +1780,67 @@
     const s = state.detailSheet;
     if (!s || s.closed || !sameId(s.itemId, id)) return;
     renderDetail(s);
+    loadDetailForecast(s);
     loadHistory(s);
+  }
+
+  function renderDetailForecast(sheet, fc) {
+    const box = sheet.q('[data-forecast-detail]');
+    if (!box) return;
+    const fItem = fc && Array.isArray(fc.items) ? fc.items.find((x) => sameId(x.id, sheet.itemId)) : null;
+    if (!fItem) {
+      box.innerHTML = '';
+      return;
+    }
+    const unit = fItem.stockUnit || '個';
+    const p = fItem.pace || {};
+    const pl = fItem.plan || {};
+    const lines = [];
+    if (p.dailyUsage > 0) {
+      const zeroTxt = p.daysToZero != null ? ` → あと <b>${esc(fmtNum(p.daysToZero))}日</b>${p.zeroDate ? `（${esc(fmtDate(p.zeroDate))}頃）` : ''}` : '';
+      lines.push(`<div>📉 <b>実績ペース</b>（直近${esc(String(p.effectiveDays || p.paceDays))}日）：${esc(fmtNum(p.dailyUsage))}${esc(unit)}/日（月約 ${esc(fmtNum(p.monthlyUsage))}${esc(unit)}）${zeroTxt}</div>`);
+      if (p.daysToMin != null && p.daysToMin > 0) {
+        lines.push(`<div class="invm-help invm-m0">最低在庫割れ予測：あと ${esc(fmtNum(p.daysToMin))}日${p.minDate ? `（${esc(fmtDate(p.minDate))}頃）` : ''}</div>`);
+      }
+    } else {
+      lines.push(`<div class="invm-help invm-m0">📉 実績ペース：直近 ${esc(String(p.paceDays || 90))}日間の消費記録がありません</div>`);
+    }
+    if ((pl.demands && pl.demands.length) || pl.plannedQty > 0) {
+      const shortTxt = pl.shortageQty > 0
+        ? `<span class="invm-fc-short">不足 ${esc(fmtNum(pl.shortageQty))}${esc(unit)}${pl.shortagePlanName ? `（${pl.shortageDate ? `${esc(fmtDate(pl.shortageDate))} ` : ''}「${esc(pl.shortagePlanName)}」で不足）` : ''}</span>`
+        : `<span class="invm-fc-ok">充足（見込み残 ${esc(fmtNum(pl.projectedStock))}${esc(unit)}）</span>`;
+      lines.push(`<div>📋 <b>未実行計画</b>：必要 ${esc(fmtNum(pl.plannedQty))}${esc(unit)} → ${shortTxt}</div>`);
+      const rows = (pl.demands || []).slice(0, 8).map((d) => `
+        <div class="invm-fc-demand-row">
+          <span>${d.startDate ? esc(fmtDate(d.startDate)) + ' ' : ''}${esc(d.planName)}</span>
+          <span>−${esc(fmtNum(d.stockQty))}${esc(unit)} → 残 ${esc(fmtNum(d.remainingAfter))}${esc(unit)}</span>
+        </div>`).join('');
+      const more = (pl.demands || []).length > 8 ? `<div class="invm-help invm-m0">他 ${pl.demands.length - 8}件の計画</div>` : '';
+      lines.push(`<div class="invm-fc-demands">${rows}${more}</div>`);
+    } else if (fItem.costLinks && fItem.costLinks.length) {
+      lines.push('<div class="invm-help invm-m0">📋 未実行計画：紐づく栽培計画の予定はありません</div>');
+    } else {
+      lines.push('<div class="invm-help invm-m0">📋 原価項目が未紐づけのため計画必要量は未計算です（✏️ 編集で紐づけできます）</div>');
+    }
+    box.innerHTML = `<div class="invm-fc-detail ${fItem.risk ? `is-${fItem.risk}` : ''}"><div class="invm-fc-detail-title">📈 在庫予測</div>${lines.join('')}</div>`;
+  }
+
+  async function loadDetailForecast(sheet) {
+    const box = sheet.q('[data-forecast-detail]');
+    if (!box || !isForecastAllowed()) return;
+    if (state.forecast) {
+      renderDetailForecast(sheet, state.forecast);
+      return;
+    }
+    box.innerHTML = '<div class="invm-fc-detail"><div class="invm-help invm-m0"><span class="invm-inline-spinner"></span>在庫予測を計算しています…</div></div>';
+    try {
+      const fc = await call('inventory_getForecast', state.forecastOpts);
+      state.forecast = fc;
+      if (Array.isArray(fc && fc.costItems) && fc.costItems.length) state.costItems = fc.costItems;
+      if (!sheet.closed) renderDetailForecast(sheet, fc);
+    } catch (err) {
+      if (!sheet.closed) box.innerHTML = `<div class="invm-help">在庫予測を読み込めませんでした: ${esc((err && err.message) || err)}</div>`;
+    }
   }
 
   function openDetail(id) {
@@ -1560,12 +1850,13 @@
     const sheet = openSheet({
       title: it.name,
       className: 'is-detail',
-      html: '<div data-detail></div><div class="invm-history-title">📋 履歴</div><div data-history><div class="invm-help invm-m0"><span class="invm-inline-spinner"></span>読み込み中…</div></div>',
+      html: `<div data-detail></div>${isForecastAllowed() ? '<div data-forecast-detail></div>' : ''}<div class="invm-history-title">📋 履歴</div><div data-history><div class="invm-help invm-m0"><span class="invm-inline-spinner"></span>読み込み中…</div></div>`,
       onClose: () => { if (state.detailSheet === sheet) state.detailSheet = null; }
     });
     sheet.itemId = it.id;
     state.detailSheet = sheet;
     renderDetail(sheet);
+    loadDetailForecast(sheet);
     loadHistory(sheet);
     sheet.el.addEventListener('click', async (e) => {
       const d = e.target.closest('[data-d]');
@@ -1584,12 +1875,14 @@
       sheet.busy(true, '削除しています…');
       try {
         const res = await call('inventory_deleteLog', { id: sheet.itemId, logId: delBtn.getAttribute('data-log-del'), userName: userName() });
+        state.forecast = null;
         upsertItem(res.item);
         syncLegacy(res.item);
         sheet.busy(false);
         renderAll();
         updateBadge();
         refreshDetail(res.item.id);
+        refreshForecastIfOpen();
         toast('🗑 履歴を削除し、在庫を計算し直しました', { kind: 'ok' });
       } catch (err) {
         sheet.busy(false);
@@ -1657,11 +1950,13 @@
       const note = noteEl.value.trim();
       const act = b.getAttribute('data-o');
       const applyResult = (res) => {
+        state.forecast = null;
         upsertItem(res.item);
         syncLegacy(res.item);
         renderAll();
         updateBadge();
         refreshDetail(res.item.id);
+        refreshForecastIfOpen();
       };
       if (act === 'send') {
         sheet.busy(true, '発注メールを送信しています…');
@@ -1847,7 +2142,7 @@
         syncLegacy();
       }
       if (rename && state.filter === rename.from) state.filter = rename.to;
-      if (!rename && state.filter !== ALL && state.filter !== LOW && list.indexOf(state.filter) < 0 && !state.items.some((it) => it.category === state.filter)) state.filter = ALL;
+      if (!rename && state.filter !== ALL && state.filter !== LOW && state.filter !== STOCKTAKE && list.indexOf(state.filter) < 0 && !state.items.some((it) => it.category === state.filter)) state.filter = ALL;
       renderCatList();
       renderAll();
     };
@@ -1921,6 +2216,277 @@
     renderCatList();
     renderSups();
     call('inventory_mailStatus', {}).then((st) => { if (!sheet.closed) renderMailStatus(st); }, () => { if (!sheet.closed) renderMailStatus(null); });
+  }
+
+  // ---------------------------------------------------------------- 在庫予測
+  function mapCostCategoryToInventory(cat) {
+    if (cat === '農薬' || cat === '肥料' || cat === '資材') return cat;
+    if (cat === '種') return '資材';
+    return '';
+  }
+
+  function refreshForecastIfOpen() {
+    const s = state.forecastSheet;
+    if (s && !s.closed && typeof s.reload === 'function') s.reload();
+  }
+
+  function openForecastSheet() {
+    if (!isForecastAllowed()) return;
+    if (state.forecastSheet && !state.forecastSheet.closed) state.forecastSheet.close();
+    let tab = 'items';
+    let onlyRisk = false;
+    const html = `
+      <div class="invm-fc-controls">
+        <label>計画範囲
+          <select class="invm-input" data-fc-horizon>
+            <option value="0"${state.forecastOpts.horizonDays === 0 ? ' selected' : ''}>全未実行計画</option>
+            <option value="30"${state.forecastOpts.horizonDays === 30 ? ' selected' : ''}>今後30日</option>
+            <option value="90"${state.forecastOpts.horizonDays === 90 ? ' selected' : ''}>今後90日</option>
+            <option value="180"${state.forecastOpts.horizonDays === 180 ? ' selected' : ''}>今後180日</option>
+          </select>
+        </label>
+        <label>消費ペース
+          <select class="invm-input" data-fc-pace>
+            <option value="30"${state.forecastOpts.paceDays === 30 ? ' selected' : ''}>直近30日</option>
+            <option value="60"${state.forecastOpts.paceDays === 60 ? ' selected' : ''}>直近60日</option>
+            <option value="90"${state.forecastOpts.paceDays === 90 ? ' selected' : ''}>直近90日</option>
+          </select>
+        </label>
+      </div>
+      <div class="invm-fc-summary" data-fc-summary></div>
+      <div class="invm-fc-tabs" data-fc-tabs></div>
+      <div data-fc-body><div class="invm-empty"><div class="invm-spinner"></div><p>在庫予測を計算しています…</p></div></div>`;
+    const sheet = openSheet({
+      title: '📈 在庫予測（ペース・栽培計画）',
+      html,
+      className: 'is-forecast',
+      onClose: () => { if (state.forecastSheet === sheet) state.forecastSheet = null; }
+    });
+    state.forecastSheet = sheet;
+
+    const riskRank = (r) => (r === 'danger' ? 0 : r === 'warn' ? 1 : r === 'ok' ? 2 : 3);
+    const soonestDays = (it) => {
+      const a = it.pace && it.pace.daysToZero != null ? it.pace.daysToZero : Infinity;
+      const b = it.plan && it.plan.shortageDays != null ? it.plan.shortageDays : Infinity;
+      return Math.min(a, b);
+    };
+
+    const render = () => {
+      const fc = state.forecast;
+      if (!fc) return;
+      const sum = fc.summary || {};
+      sheet.q('[data-fc-summary]').innerHTML = `
+        <button type="button" class="invm-fc-stat is-danger${onlyRisk && tab === 'items' ? ' is-active' : ''}" data-fc-stat="shortage">
+          <b>${esc(String(sum.shortageCount || 0))}</b><span>計画で不足</span>
+        </button>
+        <button type="button" class="invm-fc-stat is-warn" data-fc-stat="pace">
+          <b>${esc(String(sum.paceSoonCount || 0))}</b><span>30日以内枯渇</span>
+        </button>
+        <button type="button" class="invm-fc-stat${tab === 'unlinked' ? ' is-active' : ''}" data-fc-stat="unlinked">
+          <b>${esc(String(sum.unlinkedCount || 0))}</b><span>未紐づけ資材</span>
+        </button>`;
+
+      sheet.q('[data-fc-tabs]').innerHTML = `
+        <button type="button" class="invm-chip${tab === 'items' ? ' is-active' : ''}" data-fc-tab="items">📦 資材ごとの予測 <span class="invm-chip-count">${(fc.items || []).length}</span></button>
+        <button type="button" class="invm-chip${tab === 'unlinked' ? ' is-active' : ''}" data-fc-tab="unlinked">🔗 未紐づけの計画資材 <span class="invm-chip-count">${(fc.unlinkedDemands || []).length}</span></button>
+        ${tab === 'items' ? `<button type="button" class="invm-chip${onlyRisk ? ' is-alert is-active' : ''}" data-fc-only-risk>⚠️ 要注意のみ</button>` : ''}`;
+
+      const body = sheet.q('[data-fc-body]');
+      if (tab === 'items') {
+        const list = (fc.items || []).slice()
+          .filter((it) => !onlyRisk || it.risk === 'danger' || it.risk === 'warn')
+          .sort((a, b) => {
+            const ra = riskRank(a.risk), rb = riskRank(b.risk);
+            if (ra !== rb) return ra - rb;
+            const da = soonestDays(a), db = soonestDays(b);
+            if (da !== db) return da - db;
+            return String(a.name).localeCompare(String(b.name), 'ja');
+          });
+        if (!list.length) {
+          body.innerHTML = `<div class="invm-empty"><p>${onlyRisk ? '不足や枯渇が近い資材はありません。' : '資材が登録されていません。'}</p></div>`;
+          return;
+        }
+        body.innerHTML = `<div class="invm-fc-list">${list.map((it) => {
+          const unit = it.stockUnit || '個';
+          const p = it.pace || {};
+          const pl = it.plan || {};
+          const badge = it.risk === 'danger'
+            ? '<span class="invm-badge is-low">🚨 要発注・不足見込</span>'
+            : it.risk === 'warn'
+              ? '<span class="invm-badge is-stocktake">⚠️ 注意</span>'
+              : it.risk === 'ok'
+                ? '<span class="invm-badge">✅ 充足見込</span>'
+                : '<span class="invm-badge">データなし</span>';
+          const paceLine = p.dailyUsage > 0
+            ? `📉 消費 ${esc(fmtNum(p.dailyUsage))}${esc(unit)}/日${p.daysToZero != null ? ` → <b>あと${esc(fmtNum(p.daysToZero))}日</b>${p.zeroDate ? `（${esc(fmtDate(p.zeroDate))}頃）` : ''}` : ''}`
+            : `📉 直近${esc(String(p.paceDays || 90))}日の消費実績なし`;
+          const planLine = pl.plannedQty > 0
+            ? (pl.shortageQty > 0
+              ? `📋 計画必要 ${esc(fmtNum(pl.plannedQty))}${esc(unit)} → <b class="invm-fc-short">不足 ${esc(fmtNum(pl.shortageQty))}${esc(unit)}</b>${pl.shortagePlanName ? `（${pl.shortageDate ? `${esc(fmtDate(pl.shortageDate))} ` : ''}「${esc(pl.shortagePlanName)}」）` : ''}`
+              : `📋 計画必要 ${esc(fmtNum(pl.plannedQty))}${esc(unit)} → <span class="invm-fc-ok">充足（残 ${esc(fmtNum(pl.projectedStock))}${esc(unit)}）</span>`)
+            : (it.costLinks && it.costLinks.length ? '📋 対象期間の計画予定なし' : '📋 原価項目 未紐づけ');
+          return `
+            <div class="invm-fc-card is-${esc(it.risk)}" data-fc-id="${esc(it.id)}">
+              <div class="invm-fc-card-head">
+                <div>
+                  <div class="invm-fc-card-name">${esc(it.name)}</div>
+                  <div class="invm-fc-card-meta">現在庫 <b>${esc(fmtNum(it.stock))}</b>${esc(unit)}${it.minStock > 0 ? ` / 最低 ${esc(fmtNum(it.minStock))}${esc(unit)}` : ''}</div>
+                </div>
+                ${badge}
+              </div>
+              <div class="invm-fc-card-lines">
+                <div>${paceLine}</div>
+                <div>${planLine}</div>
+              </div>
+              <div class="invm-row invm-mt6">
+                <button type="button" class="invm-btn is-order is-grow" data-fc-order="${esc(it.id)}">📧 発注</button>
+                <button type="button" class="invm-btn is-sub is-grow" data-fc-detail="${esc(it.id)}">詳細・計画内訳</button>
+              </div>
+            </div>`;
+        }).join('')}</div>`;
+      } else {
+        const unlinked = fc.unlinkedDemands || [];
+        if (!unlinked.length) {
+          body.innerHTML = '<div class="invm-empty"><p>未紐づけの計画資材はありません。すべての原価資材が在庫管理と紐づいています。</p></div>';
+          return;
+        }
+        const matOpts = (fc.items || []).map((it) => `<option value="${esc(it.id)}">${esc(it.name)}（現在 ${esc(fmtNum(it.stock))}${esc(it.stockUnit || '個')}）</option>`).join('');
+        body.innerHTML = `<div class="invm-fc-list">${unlinked.map((u, idx) => {
+          const planPreview = (u.plans || []).slice(0, 3).map((p) => `${p.startDate ? fmtDate(p.startDate) + ' ' : ''}${p.planName}(${fmtNum(p.costQty)})`).join('、') +
+            ((u.plans || []).length > 3 ? ` 他${u.plans.length - 3}件` : '');
+          return `
+            <div class="invm-fc-unlinked" data-unlinked-idx="${idx}">
+              <div class="invm-fc-card-head">
+                <div>
+                  <div class="invm-fc-card-name">${esc(u.costItemName)}${u.spec ? ` <small>（${esc(u.spec)}）</small>` : ''}</div>
+                  <div class="invm-fc-card-meta">${u.category ? `${esc(u.category)} · ` : ''}計画合計 <b>${esc(fmtNum(u.totalCostQty))}</b>（${(u.plans || []).length}件の計画）</div>
+                </div>
+              </div>
+              <div class="invm-help invm-m0">${esc(planPreview)}</div>
+              ${u.suggestedMaterialId ? `
+                <div class="invm-row invm-mt6">
+                  <button type="button" class="invm-btn is-primary is-block" data-fc-quick-link="${idx}">🔗 「${esc(u.suggestedMaterialName)}」に紐づける（換算 1）</button>
+                </div>` : ''}
+              <div class="invm-link-add invm-mt6">
+                <select class="invm-input" data-fc-link-mat="${idx}">
+                  <option value="">既存在庫から選んで紐づける…</option>
+                  ${matOpts}
+                </select>
+                <input class="invm-input is-ratio" type="number" min="0.001" step="any" data-fc-link-ratio="${idx}" value="1" placeholder="換算" title="1在庫あたりの原価単位数">
+                <button type="button" class="invm-btn is-sub" data-fc-link-btn="${idx}">紐づける</button>
+              </div>
+              <div class="invm-row invm-mt6">
+                <button type="button" class="invm-btn is-ghost is-block" data-fc-new-mat="${idx}">＋ 「${esc(u.costItemName)}」を新規在庫として登録</button>
+              </div>
+            </div>`;
+        }).join('')}</div>`;
+      }
+    };
+
+    const loadForecast = async () => {
+      sheet.q('[data-fc-body]').innerHTML = '<div class="invm-empty"><div class="invm-spinner"></div><p>在庫予測を計算しています…</p></div>';
+      try {
+        const fc = await call('inventory_getForecast', state.forecastOpts);
+        state.forecast = fc;
+        if (Array.isArray(fc && fc.costItems) && fc.costItems.length) state.costItems = fc.costItems;
+        if (!sheet.closed) render();
+      } catch (err) {
+        if (!sheet.closed) {
+          sheet.q('[data-fc-body]').innerHTML = `<div class="invm-note-box is-error">予測を読み込めませんでした: ${esc((err && err.message) || err)}</div>`;
+        }
+      }
+    };
+    sheet.reload = loadForecast;
+
+    sheet.el.addEventListener('change', (e) => {
+      if (e.target.matches('[data-fc-horizon]')) {
+        state.forecastOpts.horizonDays = Number(e.target.value) || 0;
+        loadForecast();
+      } else if (e.target.matches('[data-fc-pace]')) {
+        state.forecastOpts.paceDays = Number(e.target.value) || 90;
+        loadForecast();
+      }
+    });
+
+    sheet.el.addEventListener('click', async (e) => {
+      const statBtn = e.target.closest('[data-fc-stat]');
+      if (statBtn) {
+        const st = statBtn.getAttribute('data-fc-stat');
+        if (st === 'unlinked') {
+          tab = 'unlinked';
+        } else {
+          tab = 'items';
+          onlyRisk = st === 'shortage' ? !onlyRisk : true;
+        }
+        render();
+        return;
+      }
+      const tabBtn = e.target.closest('[data-fc-tab]');
+      if (tabBtn) {
+        tab = tabBtn.getAttribute('data-fc-tab');
+        render();
+        return;
+      }
+      if (e.target.closest('[data-fc-only-risk]')) {
+        onlyRisk = !onlyRisk;
+        render();
+        return;
+      }
+      const orderBtn = e.target.closest('[data-fc-order]');
+      if (orderBtn) {
+        openOrderSheet(orderBtn.getAttribute('data-fc-order'));
+        return;
+      }
+      const detBtn = e.target.closest('[data-fc-detail]');
+      if (detBtn) {
+        openDetail(detBtn.getAttribute('data-fc-detail'));
+        return;
+      }
+      const qLinkBtn = e.target.closest('[data-fc-quick-link]');
+      const linkBtn = e.target.closest('[data-fc-link-btn]');
+      if (qLinkBtn || linkBtn) {
+        const idx = Number((qLinkBtn || linkBtn).getAttribute(qLinkBtn ? 'data-fc-quick-link' : 'data-fc-link-btn'));
+        const u = state.forecast && state.forecast.unlinkedDemands && state.forecast.unlinkedDemands[idx];
+        if (!u || !u.costItemId) return;
+        const matId = qLinkBtn ? u.suggestedMaterialId : (sheet.q(`[data-fc-link-mat="${idx}"]`) || {}).value;
+        const ratio = qLinkBtn ? 1 : num((sheet.q(`[data-fc-link-ratio="${idx}"]`) || {}).value);
+        if (!matId) { toast('紐づける在庫資材を選んでください', { kind: 'warn' }); return; }
+        if (!(ratio > 0)) { toast('換算数は 0 より大きい数字で入力してください', { kind: 'warn' }); return; }
+        sheet.busy(true, '紐づけています…');
+        try {
+          const res = await call('inventory_linkCostItem', {
+            materialId: matId,
+            costItemId: u.costItemId,
+            costUnitPerStock: ratio,
+            userName: userName()
+          });
+          if (res && res.item) {
+            upsertItem(res.item);
+            syncLegacy(res.item);
+          }
+          sheet.busy(false);
+          toast(`🔗 「${esc(u.costItemName)}」を紐づけました`, { kind: 'ok' });
+          await loadForecast();
+        } catch (err) {
+          sheet.busy(false);
+          showError(err);
+        }
+        return;
+      }
+      const newMatBtn = e.target.closest('[data-fc-new-mat]');
+      if (newMatBtn) {
+        const idx = Number(newMatBtn.getAttribute('data-fc-new-mat'));
+        const u = state.forecast && state.forecast.unlinkedDemands && state.forecast.unlinkedDemands[idx];
+        if (!u) return;
+        openItemForm(null, {
+          name: u.costItemName,
+          category: mapCostCategoryToInventory(u.category),
+          costLinks: u.costItemId ? [{ costItemId: u.costItemId, costUnitPerStock: 1 }] : []
+        });
+      }
+    });
+
+    loadForecast();
   }
 
   // ---------------------------------------------------------------- バーコード読み取り
@@ -2120,6 +2686,7 @@
 
   function onInventoryChanged(e) {
     const d = (e && e.detail) || {};
+    state.forecast = null;
     if (d.reload) {
       if (state.open || state.loaded) load().catch(() => {});
       return;

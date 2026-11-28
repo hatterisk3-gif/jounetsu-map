@@ -45,6 +45,10 @@ html.invm-lock body {
   box-sizing: border-box;
 }
 
+.invm-chip-badge.is-stocktake {
+  background: #EF6C00;
+}
+
 @media (max-width: 720px) {
   .worker-top-bar #btnInventory {
     flex: 0 0 auto;
@@ -154,6 +158,12 @@ html.invm-lock body {
   cursor: pointer;
 }
 
+.invm-alert-banner.is-stocktake {
+  border-color: #FFCC80;
+  background: #FFF3E0;
+  color: #E65100;
+}
+
 .invm-banner-link {
   float: right;
   font-weight: bold;
@@ -246,6 +256,18 @@ html.invm-lock body {
   color: #fff;
 }
 
+.invm-chip.is-stocktake {
+  border-color: #FB8C00;
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.invm-chip.is-stocktake.is-active {
+  border-color: #EF6C00;
+  background: #EF6C00;
+  color: #fff;
+}
+
 .invm-chip.is-add {
   border-style: dashed;
   background: transparent;
@@ -292,6 +314,11 @@ html.invm-lock body {
 .invm-card.is-low {
   border-color: #EF9A9A;
   box-shadow: inset 0 0 0 1px #EF9A9A, 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.invm-card.is-stocktake {
+  border-color: #FFCC80;
+  box-shadow: inset 0 0 0 1px #FFCC80, 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .invm-card.is-focus {
@@ -372,6 +399,11 @@ html.invm-lock body {
 .invm-badge.is-low {
   background: #FFEBEE;
   color: #C62828;
+}
+
+.invm-badge.is-stocktake {
+  background: #FFF3E0;
+  color: #E65100;
 }
 
 .invm-badge.is-order {
@@ -820,6 +852,12 @@ textarea.invm-input {
   border-color: #A5D6A7;
   background: #E8F5E9;
   color: #1B5E20;
+}
+
+.invm-note-box.is-stocktake {
+  border-color: #FFCC80;
+  background: #FFF3E0;
+  color: #E65100;
 }
 
 /* ---------- 写真 ---------- */
@@ -1457,6 +1495,234 @@ textarea.invm-input {
 
 .invm-toast.is-order {
   background: #6A1B9A;
+}
+
+.invm-toast.is-stocktake {
+  background: #EF6C00;
+}
+
+/* ---------- 在庫予測 ---------- */
+.invm-link-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  background: #fafafa;
+}
+
+.invm-link-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: bold;
+  word-break: break-word;
+}
+
+.invm-link-ratio {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #546e7a;
+  white-space: nowrap;
+}
+
+.invm-input.is-ratio {
+  width: 72px;
+  flex: 0 0 72px;
+  text-align: right;
+  padding: 6px 8px;
+}
+
+.invm-link-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.invm-link-add select {
+  flex: 1;
+  min-width: 0;
+}
+
+.invm-fc-detail {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #cfd8dc;
+  border-radius: 12px;
+  background: #f8faf9;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.invm-fc-detail.is-danger {
+  border-color: #EF9A9A;
+  background: #FFF8F8;
+}
+
+.invm-fc-detail.is-warn {
+  border-color: #FFCC80;
+  background: #FFFBF2;
+}
+
+.invm-fc-detail-title {
+  font-weight: bold;
+  color: #263238;
+}
+
+.invm-fc-demands {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px dashed #cfd8dc;
+}
+
+.invm-fc-demand-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #455a64;
+}
+
+.invm-fc-short {
+  color: #C62828;
+  font-weight: bold;
+}
+
+.invm-fc-ok {
+  color: #2E7D32;
+  font-weight: bold;
+}
+
+.invm-sheet.is-forecast .invm-sheet-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.invm-fc-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.invm-fc-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #546e7a;
+}
+
+.invm-fc-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.invm-fc-stat {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  border: 1px solid #cfd8dc;
+  border-radius: 10px;
+  background: #fff;
+  color: #37474f;
+  cursor: pointer;
+}
+
+.invm-fc-stat b {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.invm-fc-stat span {
+  font-size: 11px;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
+.invm-fc-stat.is-danger b {
+  color: #C62828;
+}
+
+.invm-fc-stat.is-warn b {
+  color: #E65100;
+}
+
+.invm-fc-stat.is-active {
+  border-color: #2E7D32;
+  background: #E8F5E9;
+}
+
+.invm-fc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.invm-fc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invm-fc-card,
+.invm-fc-unlinked {
+  padding: 10px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.invm-fc-card.is-danger {
+  border-color: #EF9A9A;
+  background: #FFFDFD;
+}
+
+.invm-fc-card.is-warn {
+  border-color: #FFCC80;
+  background: #FFFDF8;
+}
+
+.invm-fc-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.invm-fc-card-name {
+  font-size: 14px;
+  font-weight: bold;
+  color: #263238;
+}
+
+.invm-fc-card-meta {
+  font-size: 12px;
+  color: #607d8b;
+}
+
+.invm-fc-card-lines {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: #37474f;
 }
 
 .invm-toast.is-clickable {

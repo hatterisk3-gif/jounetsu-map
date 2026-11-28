@@ -15512,8 +15512,8 @@
 
   // ========================================================================
   // 在庫管理（📦 在庫ボタン: inventory.js）
-  //   資材: materials.meta に barcode / category / minStock / orderQty / orderIntervalDays /
-  //         supplierName / supplierEmail / note と、再計算キャッシュ stock / lastOrderAt / lastRestockAt
+  //   資材: materials.meta に barcode / category / minStock / orderQty / orderIntervalDays / stocktakeIntervalDays /
+  //         costLinks / supplierName / supplierEmail / note と、再計算キャッシュ stock / lastOrderAt / lastRestockAt / lastCountAt
   //   履歴: inventory_logs（入庫=補充・出庫=使う・棚卸=数える（qty_delta は数えた個数）・発注=発注メール）
   //   設定: org_settings.inventory_settings（カテゴリ・仕入れ先・発注メールの差出人と本文）
   //   メール送信は Edge Function order-mailer。最低在庫割れ・入荷待ち・発注間隔はサーバー側でも再判定する。
@@ -15584,6 +15584,23 @@
     return out.slice(0, 3);
   }
 
+  function invNormalizeCostLinks_(raw) {
+    var out = [];
+    var seen = {};
+    (Array.isArray(raw) ? raw : []).forEach(function (x) {
+      if (!x || typeof x !== 'object') return;
+      var cid = String(x.costItemId || x.id || '').trim();
+      if (!cid || seen[cid]) return;
+      seen[cid] = true;
+      var ratio = invNum_(x.costUnitPerStock);
+      out.push({
+        costItemId: cid,
+        costUnitPerStock: (ratio != null && ratio > 0) ? invRound_(ratio) : 1
+      });
+    });
+    return out;
+  }
+
   function invRowToItem_(r) {
     var meta = (r && r.meta && typeof r.meta === 'object') ? r.meta : {};
     var stockVal = 0;
@@ -15608,6 +15625,8 @@
       minStock: invNum_(meta.minStock),
       orderQty: invNum_(meta.orderQty),
       orderIntervalDays: invNum_(meta.orderIntervalDays),
+      stocktakeIntervalDays: invNum_(meta.stocktakeIntervalDays),
+      costLinks: invNormalizeCostLinks_(meta.costLinks),
       supplierName: String(meta.supplierName || ''),
       supplierEmail: String(meta.supplierEmail || ''),
       note: String(meta.note || ''),
@@ -15616,6 +15635,8 @@
       lastOrderAt: String(meta.lastOrderAt || ''),
       lastOrderQty: invNum_(meta.lastOrderQty),
       lastRestockAt: String(meta.lastRestockAt || ''),
+      lastCountAt: String(meta.lastCountAt || ''),
+      createdAt: String((r && r.created_at) || ''),
       updatedAt: String((r && r.updated_at) || '')
     };
   }
@@ -15740,6 +15761,7 @@
     var lastOrderAt = '';
     var lastOrderQty = null;
     var lastRestockAt = '';
+    var lastCountAt = '';
     var rows = [];
     sorted.forEach(function (l) {
       var amt = Number(l.qty_delta) || 0;
@@ -15754,6 +15776,7 @@
         stock -= amt;
       } else if (op === '棚卸') {
         if (amt > stock && (min <= 0 || amt >= min)) lastRestockAt = at;
+        if (!p.baseline) lastCountAt = at;
         stock = amt;
       } else if (op === '発注') {
         if (!p.status || p.status === 'sent') {
@@ -15764,7 +15787,14 @@
       stock = invRound_(stock);
       if (withRows) rows.push({ log: l, before: invRound_(before), after: stock });
     });
-    return { stock: stock, lastOrderAt: lastOrderAt, lastOrderQty: lastOrderQty, lastRestockAt: lastRestockAt, rows: rows };
+    return {
+      stock: stock,
+      lastOrderAt: lastOrderAt,
+      lastOrderQty: lastOrderQty,
+      lastRestockAt: lastRestockAt,
+      lastCountAt: lastCountAt,
+      rows: rows
+    };
   }
 
   async function invRecalcStock_(orgId, materialId) {
@@ -15777,7 +15807,8 @@
         stock: calc.stock,
         lastOrderAt: calc.lastOrderAt,
         lastOrderQty: calc.lastOrderQty,
-        lastRestockAt: calc.lastRestockAt
+        lastRestockAt: calc.lastRestockAt,
+        lastCountAt: calc.lastCountAt
       });
       await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(row.id), {
         method: 'PATCH', headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
@@ -15944,16 +15975,175 @@
     return out;
   }
 
+  function invNormName_(s) {
+    return String(s || '')
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+      .replace(/[\u3041-\u3096]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) + 0x60); })
+      .replace(/[\s　・_\-()（）【】\[\]\/／]/g, '')
+      .toLowerCase();
+  }
+
+  function invCpCellToMs_(planYear, cell) {
+    var py = Number(planYear) || 0;
+    if (!(py > 1900) || cell == null) return { ms: 0, dateStr: '' };
+    var mi, pi;
+    if (typeof cell === 'number' && isFinite(cell)) {
+      var f = Math.floor(cell);
+      mi = Math.floor(f / 6);
+      pi = ((f % 6) + 6) % 6;
+    } else if (typeof cell === 'object') {
+      mi = Number(cell.monthIndex);
+      if (!isFinite(mi)) {
+        var cm = Number(cell.month);
+        mi = (cm >= 1 && cm <= 12) ? (cm - 1) : 0;
+      }
+      pi = Number(cell.periodIndex != null ? cell.periodIndex : (cell.period || 0)) || 0;
+    } else {
+      return { ms: 0, dateStr: '' };
+    }
+    var y = py + Math.floor(mi / 12);
+    var m = ((mi % 12) + 12) % 12 + 1;
+    var lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    var p = Math.max(0, Math.min(5, Math.floor(pi)));
+    var day = Math.min(p * 5 + 1, lastDay);
+    var ms = Date.UTC(y, m - 1, day) - 9 * 3600000;
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return { ms: ms, dateStr: y + '-' + pad(m) + '-' + pad(day) };
+  }
+
+  function invCpPlanStartDate_(pd) {
+    var tasks = (pd && pd.tasks && typeof pd.tasks === 'object') ? pd.tasks : {};
+    var order = ['sowing', 'planting', 'harvesting'];
+    var year = Number(pd && pd.year) || 0;
+    for (var i = 0; i < order.length; i++) {
+      var arr = Array.isArray(tasks[order[i]]) ? tasks[order[i]] : [];
+      var best = null;
+      for (var j = 0; j < arr.length; j++) {
+        var d = invCpCellToMs_(year, arr[j]);
+        if (d.ms > 0 && (!best || d.ms < best.ms)) best = d;
+      }
+      if (best) return best;
+    }
+    return { ms: 0, dateStr: '' };
+  }
+
+  function invCpScaleOf_(base, pd) {
+    if (!pd) return base === 'fixed' ? 1 : 0;
+    var trays = Number(pd.trays) || 0;
+    var holes = Number(pd.holes) || 0;
+    if (base === 'area_a') return Number(pd.areaA) || 0;
+    if (base === 'tray') return trays;
+    if (base === 'plant') return holes === 1 ? trays : (trays * (holes > 0 ? holes : 0));
+    if (base === 'yield_pack') {
+      var yp = Number(pd.expectedPacks != null ? pd.expectedPacks : (pd.yieldPacks != null ? pd.yieldPacks : pd.yield)) || 0;
+      if (yp > 0) return yp;
+      var qty = (Number(pd.yieldPerSeedling) || 0) * trays * (holes > 0 ? holes : 1);
+      var perP = Number(pd.itemsPerPack) || 1;
+      return perP > 0 ? (qty / perP) : qty;
+    }
+    return 1;
+  }
+
+  function invComputePace_(logs, item, paceDays, nowMs) {
+    var days = Math.max(7, Math.min(365, Math.round(Number(paceDays) || 90)));
+    var now = nowMs != null ? nowMs : Date.now();
+    var windowStart = now - days * INV_DAY_MS_;
+    var sorted = (Array.isArray(logs) ? logs : []).slice().sort(function (a, b) {
+      var ta = invParseTs_(a.changed_at || a.created_at);
+      var tb = invParseTs_(b.changed_at || b.created_at);
+      if (ta !== tb) return ta - tb;
+      return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
+    var stock = 0;
+    var used = 0;
+    var usedEvents = 0;
+    var firstLogMs = 0;
+    sorted.forEach(function (l) {
+      var amt = Number(l.qty_delta) || 0;
+      var op = String(l.operation || '');
+      var at = invParseTs_(l.changed_at || l.created_at);
+      var p = (l.payload && typeof l.payload === 'object') ? l.payload : {};
+      if (at > 0 && (!firstLogMs || at < firstLogMs)) firstLogMs = at;
+      if (op === '入庫' || op === '初期入庫') {
+        stock += amt;
+      } else if (op === '出庫') {
+        if (at >= windowStart && amt > 0) {
+          used += amt;
+          usedEvents++;
+        }
+        stock -= amt;
+      } else if (op === '棚卸') {
+        if (!p.baseline && at >= windowStart && amt < stock) {
+          used += (stock - amt);
+          usedEvents++;
+        }
+        stock = amt;
+      }
+      stock = invRound_(stock);
+    });
+    var createdMs = invParseTs_(item && item.createdAt);
+    var firstRelevantMs = (firstLogMs && createdMs) ? Math.min(firstLogMs, createdMs) : (firstLogMs || createdMs);
+    var startMs = firstRelevantMs ? Math.max(windowStart, Math.min(now, firstRelevantMs)) : windowStart;
+    var effectiveDays = Math.max(1, Math.min(days, (now - startMs) / INV_DAY_MS_));
+    var curStock = Math.max(0, Number(item && item.stock) || 0);
+    var minStock = Number(item && item.minStock) || 0;
+    if (!(used > 0)) {
+      return {
+        paceDays: days,
+        effectiveDays: Math.round(effectiveDays),
+        used: 0,
+        usedEvents: 0,
+        dailyUsage: 0,
+        monthlyUsage: 0,
+        daysToZero: null,
+        zeroDate: '',
+        daysToMin: null,
+        minDate: ''
+      };
+    }
+    var rate = used / effectiveDays;
+    var daysToZero = rate > 0 ? Math.max(0, Math.round((curStock / rate) * 10) / 10) : null;
+    var zeroDate = daysToZero != null ? new Date(now + daysToZero * INV_DAY_MS_).toISOString() : '';
+    var daysToMin = (minStock > 0 && rate > 0) ? Math.max(0, Math.round((Math.max(0, curStock - minStock) / rate) * 10) / 10) : null;
+    var minDate = daysToMin != null ? new Date(now + daysToMin * INV_DAY_MS_).toISOString() : '';
+    return {
+      paceDays: days,
+      effectiveDays: Math.round(effectiveDays),
+      used: invRound_(used),
+      usedEvents: usedEvents,
+      dailyUsage: invRound_(rate),
+      monthlyUsage: invRound_(rate * 30),
+      daysToZero: daysToZero,
+      zeroDate: zeroDate,
+      daysToMin: daysToMin,
+      minDate: minDate
+    };
+  }
+
   function registerInventoryHandlers_() {
     registerAction('inventory_getAll', async function () {
       var orgId = await resolveCurrentOrgId_();
       var fetched = await Promise.all([
         restSelectAll_('materials', 'org_id=eq.' + encodeURIComponent(orgId) + '&order=created_at.asc,id.asc'),
-        invGetSettings_(orgId)
+        invGetSettings_(orgId),
+        restSelectAll_('org_masters', 'org_id=eq.' + encodeURIComponent(orgId) + '&master_type=eq.cost&is_active=eq.true&order=sort_order.asc')
       ]);
+      var costItems = fetched[2].map(function (r) {
+        var d = (r.data && typeof r.data === 'object') ? r.data : {};
+        return {
+          id: String(d.id || r.legacy_id || r.id || ''),
+          name: String(d.name || r.name || ''),
+          category: String(d.category || 'その他'),
+          spec: String(d.spec || ''),
+          base: String(d.base || 'fixed'),
+          unitPrice: Number(d.unitPrice) || 0,
+          priceUnit: String(d.priceUnit || d.unitPriceUnit || '円')
+        };
+      }).filter(function (c) { return c.id && c.name; });
       return {
         items: fetched[0].map(invRowToItem_).filter(function (it) { return it.id && it.name; }),
-        settings: fetched[1]
+        settings: fetched[1],
+        costItems: costItems
       };
     });
 
@@ -15969,8 +16159,9 @@
       var minStock = invNum_(src.minStock);
       var orderQty = invNum_(src.orderQty);
       var intervalDays = invNum_(src.orderIntervalDays);
+      var stocktakeIntervalDays = invNum_(src.stocktakeIntervalDays);
       var stockIn = invNum_(src.stock);
-      [minStock, orderQty, intervalDays, stockIn].forEach(function (n) {
+      [minStock, orderQty, intervalDays, stocktakeIntervalDays, stockIn].forEach(function (n) {
         if (n != null && n < 0) throw new Error('個数・日数にマイナスは入力できません');
       });
 
@@ -15996,6 +16187,8 @@
         minStock: minStock,
         orderQty: orderQty,
         orderIntervalDays: intervalDays,
+        stocktakeIntervalDays: stocktakeIntervalDays,
+        costLinks: src.costLinks !== undefined ? invNormalizeCostLinks_(src.costLinks) : invNormalizeCostLinks_(baseMeta.costLinks),
         supplierName: supplierName,
         supplierEmail: supplierEmail,
         note: String(src.note || '').slice(0, 500),
@@ -16281,6 +16474,282 @@
         action: 'fetchProductImage',
         params: { url: String(params.url || ''), exp: Number(params.exp) || 0, sig: String(params.sig || '') }
       });
+    });
+
+    registerAction('inventory_linkCostItem', async function (params) {
+      params = params || {};
+      var userName = String(params.userName || '').trim();
+      var costItemId = String(params.costItemId || '').trim();
+      if (!costItemId) throw new Error('原価項目を指定してください');
+      var orgId = await resolveCurrentOrgId_();
+      var row = await invLoadMaterialRow_(orgId, String(params.materialId || ''));
+      if (!row) throw new Error('対象の資材が見つかりません');
+      var meta = (row.meta && typeof row.meta === 'object') ? Object.assign({}, row.meta) : {};
+      var links = invNormalizeCostLinks_(meta.costLinks).filter(function (x) { return x.costItemId !== costItemId; });
+      if (!params.unlink) {
+        var ratio = invNum_(params.costUnitPerStock);
+        links.push({ costItemId: costItemId, costUnitPerStock: (ratio != null && ratio > 0) ? invRound_(ratio) : 1 });
+      }
+      meta.costLinks = links;
+      await restFetch('rest/v1/materials?id=eq.' + encodeURIComponent(row.id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ meta: meta })
+      });
+      row.meta = meta;
+      var item = invRowToItem_(row);
+      await invWriteAudit_(orgId, userName, params.unlink ? '在庫原価紐づけ解除' : '在庫原価紐づけ', row.name, costItemId);
+      invEmitChanged_({ item: item, source: 'linkCostItem' });
+      return { item: item };
+    });
+
+    registerAction('inventory_getForecast', async function (params) {
+      params = params || {};
+      var paceDays = Math.max(7, Math.min(365, Math.round(Number(params.paceDays) || 90)));
+      var horizonDays = Math.max(0, Math.min(730, Math.round(Number(params.horizonDays) || 0)));
+      var nowMs = Date.now();
+      var horizonEndMs = horizonDays > 0 ? (nowMs + horizonDays * INV_DAY_MS_) : 0;
+      var orgId = await resolveCurrentOrgId_();
+      var encOrg = encodeURIComponent(orgId);
+
+      var fetched = await Promise.all([
+        restSelectAll_('materials', 'org_id=eq.' + encOrg + '&order=created_at.asc,id.asc'),
+        restSelectAll_('inventory_logs', 'org_id=eq.' + encOrg + '&select=item_legacy_id,changed_at,created_at,operation,qty_delta,payload&order=changed_at.asc,created_at.asc,id.asc'),
+        restSelectAll_('org_masters', 'org_id=eq.' + encOrg + '&master_type=eq.cost&is_active=eq.true&order=sort_order.asc'),
+        restSelectAll_('crop_plans', 'org_id=eq.' + encOrg + '&plan_kind=eq.cost'),
+        restSelectAll_('cultivation_plans', 'org_id=eq.' + encOrg + '&order=recorded_at.asc')
+      ]);
+
+      var items = fetched[0].map(invRowToItem_).filter(function (it) { return it.id && it.name; });
+      var logsByItem = {};
+      fetched[1].forEach(function (l) {
+        var key = String(l.item_legacy_id || '').trim();
+        if (!key) return;
+        if (!logsByItem[key]) logsByItem[key] = [];
+        logsByItem[key].push(l);
+      });
+
+      var costBases = ['fixed', 'area_a', 'tray', 'plant', 'yield_pack'];
+      var costItems = [];
+      var costMasterMap = {};
+      fetched[2].forEach(function (r) {
+        var d = (r.data && typeof r.data === 'object') ? r.data : {};
+        var c = {
+          id: String(d.id || r.legacy_id || r.id || ''),
+          name: String(d.name || r.name || ''),
+          category: String(d.category || 'その他'),
+          spec: String(d.spec || ''),
+          base: costBases.indexOf(d.base) >= 0 ? d.base : 'fixed',
+          defaultQty: d.defaultQty != null ? d.defaultQty : (d.standardDosage != null ? d.standardDosage : ''),
+          unitPrice: Number(d.unitPrice) || 0,
+          priceUnit: String(d.priceUnit || d.unitPriceUnit || '円')
+        };
+        if (c.id && c.name) {
+          costItems.push(c);
+          costMasterMap[c.id] = c;
+        }
+      });
+
+      var cropPlanMap = {};
+      fetched[3].forEach(function (r) {
+        var crop = String(r.crop_name || '').trim();
+        var s = (r.settings && typeof r.settings === 'object') ? r.settings : {};
+        if (crop) cropPlanMap[crop] = Array.isArray(s.entries) ? s.entries : [];
+      });
+
+      var linksByCostId = {};
+      items.forEach(function (it) {
+        (it.costLinks || []).forEach(function (lk) {
+          if (!linksByCostId[lk.costItemId]) linksByCostId[lk.costItemId] = [];
+          linksByCostId[lk.costItemId].push({ item: it, ratio: lk.costUnitPerStock > 0 ? lk.costUnitPerStock : 1 });
+        });
+      });
+
+      var itemByNormName = {};
+      items.forEach(function (it) {
+        var nk = invNormName_(it.name);
+        if (nk && !itemByNormName[nk]) itemByNormName[nk] = it;
+      });
+
+      var demandsByItemId = {};
+      var unlinkedMap = {};
+      var targetPlanCount = 0;
+
+      fetched[4].forEach(function (r) {
+        var pd = (r.plan_data && typeof r.plan_data === 'object') ? Object.assign({}, r.plan_data) : {};
+        if (!pd.year) pd.year = String(r.fiscal_year || '').trim();
+        if (!pd.crop) pd.crop = String(r.crop_name || '').trim();
+        if (!pd.variety) pd.variety = String(r.variety_name || '').trim();
+        if (!pd.planName) pd.planName = String(r.plan_name || '').trim() || (pd.year + '年 ' + pd.crop);
+        if (pd.status === 'executed') return;
+
+        var start = invCpPlanStartDate_(pd);
+        if (horizonEndMs > 0 && start.ms > horizonEndMs) return;
+
+        var entries = cropPlanMap[pd.crop];
+        if (!entries || !entries.length) return;
+        targetPlanCount++;
+
+        var planId = String(pd.id || r.legacy_id || r.id || '');
+        entries.forEach(function (e) {
+          var cid = String(e.costItemId || '').trim();
+          var m = cid ? costMasterMap[cid] : null;
+          var base = e.base || (m && m.base) || 'fixed';
+          var qpb = Number(e.qtyPerBase != null ? e.qtyPerBase : ((m && m.defaultQty !== '' && m.defaultQty != null) ? m.defaultQty : 1)) || 0;
+          var costQty = qpb * invCpScaleOf_(base, pd);
+          if (!(costQty > 0)) return;
+
+          var cName = (m && m.name) || String(e.costItemName || '');
+          var cCat = (m && m.category) || String(e.category || '');
+          var cSpec = (m && m.spec) || '';
+          var linked = cid ? linksByCostId[cid] : null;
+          if (linked && linked.length) {
+            linked.forEach(function (lk) {
+              var stockQty = invRound_(costQty / lk.ratio);
+              if (!(stockQty > 0)) return;
+              if (!demandsByItemId[lk.item.id]) demandsByItemId[lk.item.id] = [];
+              demandsByItemId[lk.item.id].push({
+                planId: planId,
+                planName: pd.planName,
+                crop: pd.crop,
+                variety: pd.variety,
+                startDate: start.dateStr,
+                startMs: start.ms,
+                costItemId: cid,
+                costItemName: cName,
+                costQty: invRound_(costQty),
+                costUnitPerStock: lk.ratio,
+                stockQty: stockQty
+              });
+            });
+          } else {
+            var uKey = cid || ('name:' + cName);
+            if (!unlinkedMap[uKey]) {
+              var cand = itemByNormName[invNormName_(cName)] || null;
+              unlinkedMap[uKey] = {
+                costItemId: cid,
+                costItemName: cName,
+                category: cCat,
+                spec: cSpec,
+                base: base,
+                totalCostQty: 0,
+                plans: [],
+                suggestedMaterialId: cand ? cand.id : '',
+                suggestedMaterialName: cand ? cand.name : ''
+              };
+            }
+            unlinkedMap[uKey].totalCostQty = invRound_(unlinkedMap[uKey].totalCostQty + costQty);
+            unlinkedMap[uKey].plans.push({
+              planId: planId,
+              planName: pd.planName,
+              crop: pd.crop,
+              variety: pd.variety,
+              startDate: start.dateStr,
+              startMs: start.ms,
+              costQty: invRound_(costQty)
+            });
+          }
+        });
+      });
+
+      var dangerCount = 0;
+      var warnCount = 0;
+      var shortageCount = 0;
+      var paceSoonCount = 0;
+
+      var forecastItems = items.map(function (it) {
+        var pace = invComputePace_(logsByItem[it.id] || [], it, paceDays, nowMs);
+        var demands = (demandsByItemId[it.id] || []).slice().sort(function (a, b) {
+          if (a.startMs && b.startMs && a.startMs !== b.startMs) return a.startMs - b.startMs;
+          if (a.startMs && !b.startMs) return -1;
+          if (!a.startMs && b.startMs) return 1;
+          return String(a.planName || '').localeCompare(String(b.planName || ''), 'ja');
+        });
+        var plannedQty = 0;
+        var remaining = Number(it.stock) || 0;
+        var shortageDate = '';
+        var shortagePlanName = '';
+        var shortageDays = null;
+        demands.forEach(function (d) {
+          plannedQty = invRound_(plannedQty + d.stockQty);
+          remaining = invRound_(remaining - d.stockQty);
+          d.remainingAfter = remaining;
+          if (remaining < 0 && !shortagePlanName) {
+            shortagePlanName = d.planName;
+            shortageDate = d.startDate;
+            if (d.startMs > 0) shortageDays = Math.max(0, Math.round((d.startMs - nowMs) / INV_DAY_MS_));
+          }
+        });
+        var projectedStock = invRound_((Number(it.stock) || 0) - plannedQty);
+        var shortageQty = projectedStock < 0 ? invRound_(-projectedStock) : 0;
+
+        var risk = 'none';
+        if (shortageQty > 0 || (pace.daysToZero != null && pace.daysToZero <= 14) || (shortageDays != null && shortageDays <= 14)) {
+          risk = 'danger';
+        } else if ((pace.daysToZero != null && pace.daysToZero <= 30) || (pace.daysToMin != null && pace.daysToMin <= 14)) {
+          risk = 'warn';
+        } else if (pace.dailyUsage > 0 || plannedQty > 0) {
+          risk = 'ok';
+        }
+        if (risk === 'danger') dangerCount++;
+        else if (risk === 'warn') warnCount++;
+        if (shortageQty > 0) shortageCount++;
+        if (pace.daysToZero != null && pace.daysToZero <= 30) paceSoonCount++;
+
+        return {
+          id: it.id,
+          name: it.name,
+          category: it.category,
+          stock: it.stock,
+          stockUnit: it.stockUnit,
+          minStock: it.minStock,
+          orderQty: it.orderQty,
+          signName: it.signName,
+          supplierName: it.supplierName,
+          supplierEmail: it.supplierEmail,
+          costLinks: it.costLinks,
+          pace: pace,
+          plan: {
+            plannedQty: plannedQty,
+            projectedStock: projectedStock,
+            shortageQty: shortageQty,
+            shortageDate: shortageDate,
+            shortagePlanName: shortagePlanName,
+            shortageDays: shortageDays,
+            demands: demands
+          },
+          risk: risk
+        };
+      });
+
+      var unlinkedDemands = Object.keys(unlinkedMap).map(function (k) {
+        var u = unlinkedMap[k];
+        u.plans.sort(function (a, b) {
+          if (a.startMs && b.startMs && a.startMs !== b.startMs) return a.startMs - b.startMs;
+          return a.startMs ? -1 : (b.startMs ? 1 : 0);
+        });
+        return u;
+      }).sort(function (a, b) {
+        return b.totalCostQty - a.totalCostQty || String(a.costItemName).localeCompare(String(b.costItemName), 'ja');
+      });
+
+      return {
+        generatedAt: new Date(nowMs).toISOString(),
+        paceDays: paceDays,
+        horizonDays: horizonDays,
+        summary: {
+          totalItems: forecastItems.length,
+          dangerCount: dangerCount,
+          warnCount: warnCount,
+          shortageCount: shortageCount,
+          paceSoonCount: paceSoonCount,
+          targetPlanCount: targetPlanCount,
+          unlinkedCount: unlinkedDemands.length
+        },
+        items: forecastItems,
+        unlinkedDemands: unlinkedDemands,
+        costItems: costItems
+      };
     });
   }
 
